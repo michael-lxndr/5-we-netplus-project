@@ -1,0 +1,73 @@
+services:
+  api:
+    build:
+      context: ./backend
+      target: development
+    environment:
+      APP_MODE: ${APP_MODE:-local}
+      APP_PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-netplus}:${POSTGRES_PASSWORD:-netplus_dev}@postgres:5432/${POSTGRES_DB:-netplus}?sslmode=disable
+      REDIS_ADDR: redis:6379
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+      - go-build-cache:/root/.cache/go-build
+      - go-mod-cache:/go/pkg/mod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: sh -c "go run ./cmd/api"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    working_dir: /app
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-/api}
+    ports:
+      - "${WEB_BIND_IP:-127.0.0.1}:${WEB_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+    command: npm run dev -- --host 0.0.0.0
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-netplus}
+      POSTGRES_USER: ${POSTGRES_USER:-netplus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-netplus_dev}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  frontend-node-modules:
+  go-build-cache:
+  go-mod-cache:
+  postgres-data:
+  redis-data:

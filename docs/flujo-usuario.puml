@@ -1,0 +1,82 @@
+@startuml
+title Flujo de usuario - sistema de Excel y dashboards
+
+skinparam shadowing false
+skinparam activity {
+	BackgroundColor #F7F9FC
+	BorderColor #183153
+	DiamondBackgroundColor #E6FFFB
+	DiamondBorderColor #0D9488
+	StartColor #0D9488
+	EndColor #183153
+}
+
+partition "Instalación" {
+	start
+	:Elegir archivo de entorno;
+	if (¿Modo de instalación?) then (Local)
+		:Levantar Docker Compose;
+		:API Go + frontend\n en la misma computadora;
+		:Conectar PostgreSQL y Redis\n solo por localhost;
+		:Acceder desde 127.0.0.1;
+	else (Servidor)
+		:Levantar Docker Compose\n en la PC principal;
+		:API Go procesa las solicitudes;
+		:Conectar PostgreSQL y Redis\n solo dentro del servidor;
+		:Publicar únicamente el puerto web;
+		:Acceder desde otros equipos\n con la IP del servidor;
+	endif
+}
+
+partition "Autenticación" {
+	:Mostrar formulario de inicio de sesión;
+	:Introducir usuario y contraseña;
+	if (¿Credenciales válidas?) then (No)
+		:Mostrar error y registrar intento;
+		stop
+	else (Sí)
+		:Crear sesión segura;
+	endif
+}
+
+if (¿Rol del usuario?) then (admin)
+	partition "Administrador" {
+		:Mostrar dashboard y estado de importaciones;
+		if (¿Cargar un Excel?) then (Sí)
+			:Seleccionar archivo XLSX;
+			:Validar tamaño, tipo,\nhojas y columnas;
+			if (¿Archivo válido?) then (No)
+				:Mostrar errores por fila y columna;
+				:Permitir corregir y volver a cargar;
+			else (Sí)
+				:Guardar archivo original;
+				:Procesar filas en Go\n y Excelize;
+				if (¿Modo servidor y tarea pesada?) then (Sí)
+				  :Enviar tarea a Redis;
+				  :Procesar con worker;
+				else (No)
+				  :Procesar en la API;
+				endif
+				:Normalizar y guardar métricas;
+				:Mostrar resumen de importación;
+			endif
+		else (No)
+			:Consultar datos ya procesados;
+		endif
+		:Configurar gráficos y filtros;
+		:Publicar dashboard;
+		:Crear o desactivar usuarios viewer;
+		:Consultar auditoría y respaldos;
+	}
+else (viewer)
+	partition "Viewer" {
+		:Mostrar dashboards publicados;
+		:Aplicar filtros y rango de fechas;
+		:Consultar tablas y gráficos;
+		:Exportar reporte permitido;
+	}
+endif
+
+:Cerrar sesión;
+stop
+@enduml
