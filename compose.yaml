@@ -9,6 +9,8 @@ services:
       APP_PORT: 8080
       DATABASE_URL: postgres://${POSTGRES_USER:-netplus}:${POSTGRES_PASSWORD:-netplus_dev}@postgres:5432/${POSTGRES_DB:-netplus}?sslmode=disable
       REDIS_ADDR: redis:6379
+      # true con HTTPS. En localhost el navegador acepta la cookie Secure; false solo para http://IP en desarrollo.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     volumes:
       - ./backend:/app
       - ./data:/app/data
