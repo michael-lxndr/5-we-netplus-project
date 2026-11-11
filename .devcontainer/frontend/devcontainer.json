@@ -1,16 +1,15 @@
 {
-  "name": "Netplus Docker",
-  "dockerComposeFile": "../compose.yaml",
+  "name": "Netplus - Frontend (Node)",
+  "dockerComposeFile": ["../../compose.yaml", "../compose.devcontainer.yaml"],
   "service": "frontend",
   "workspaceFolder": "/app",
-  "shutdownAction": "stopCompose",
+  "shutdownAction": "none",
   "overrideCommand": false,
   "customizations": {
     "vscode": {
       "extensions": [
-        "golang.go",
         "dbaeumer.vscode-eslint",
-        "bradlc.vscode-tailwindcss"
+        "esbenp.prettier-vscode"
       ]
     }
   }

@@ -1,0 +1,9 @@
+# Solo para los dev containers de VS Code.
+# Quita la sección `build` para que VS Code use las imágenes ya construidas con
+# `docker compose up -d --build` y no intente compilarlas por su cuenta (eso
+# fallaba con "additional privileges requested ... fs.read" en algunos equipos).
+services:
+  api:
+    build: !reset null
+  frontend:
+    build: !reset null

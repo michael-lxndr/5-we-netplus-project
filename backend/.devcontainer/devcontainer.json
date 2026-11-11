@@ -1,0 +1,16 @@
+{
+  // Para JetBrains (GoLand): abre la carpeta `backend` como proyecto y usa este archivo.
+  // JetBrains monta la carpeta que contiene este .devcontainer en `workspaceFolder`,
+  // así que /app == backend y el IDE solo ve el proyecto Go.
+  "name": "Netplus - API (Go) - JetBrains",
+  "dockerComposeFile": ["../../compose.yaml", "../../.devcontainer/compose.devcontainer.yaml"],
+  "service": "api",
+  "workspaceFolder": "/app",
+  "shutdownAction": "none",
+  "overrideCommand": false,
+  "customizations": {
+    "jetbrains": {
+      "backend": "GoLand"
+    }
+  }
+}

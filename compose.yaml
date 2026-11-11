@@ -1,5 +1,6 @@
 services:
   api:
+    image: netplus/api:dev
     build:
       context: ./backend
       target: development
@@ -18,10 +19,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -c "go run ./cmd/api"
+    command: air -c .air.toml
     restart: unless-stopped
 
   frontend:
+    image: netplus/frontend:dev
     build:
       context: ./frontend
       dockerfile: Dockerfile
