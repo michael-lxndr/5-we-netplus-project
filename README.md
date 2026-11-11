@@ -25,6 +25,8 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
+y luego dentro de vs code `ctrl+shift+p` → "Dev Containers: Rebuild and Reopen in Container"
+
 - Frontend: <http://localhost:5173>
 - API interna: <http://localhost:5173/api/health>
 
