@@ -26,7 +26,7 @@ function apply(mode: Mode) {
   else root.setAttribute("data-theme", mode);
 }
 
-export function ThemeSwitch() {
+export function ThemeSwitch({ inline = false }: { inline?: boolean }) {
   const [mode, setMode] = useState<Mode>(readStored);
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export function ThemeSwitch() {
   }, [mode]);
 
   return (
-    <div className="theme-switch" role="group" aria-label="Tema de color">
+    <div className={inline ? "theme-switch theme-switch--inline" : "theme-switch"} role="group" aria-label="Tema de color">
       {OPTIONS.map((o) => (
         <button
           key={o.value}
