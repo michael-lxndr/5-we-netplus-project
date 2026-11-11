@@ -1,0 +1,203 @@
+@startuml modelo-de-datos
+title Modelo de datos - PostgreSQL (local y servidor)
+
+skinparam shadowing false
+hide circle
+skinparam entity {
+	BackgroundColor #F7F9FC
+	BorderColor #183153
+}
+skinparam ArrowColor #183153
+
+entity "users" as users {
+	* id : bigint <<PK>>
+	--
+	* username : varchar(64) <<UNIQUE>>
+	* password_hash : text
+	* role : varchar(16) <<admin | viewer>>
+	* active : boolean <<default true>>
+	* created_at : timestamptz
+}
+
+entity "sessions" as sessions {
+	* id : text <<PK, hash del token>>
+	--
+	* user_id : bigint <<FK>>
+	* expires_at : timestamptz
+	* created_at : timestamptz
+}
+
+entity "uploads" as uploads {
+	* id : bigint <<PK>>
+	--
+	* original_name : text
+	storage_key : text <<null si rejected o discarded>>
+	* status : varchar(16)
+	summary : jsonb <<hojas, tipo, período, conteos>>
+	* uploaded_by : bigint <<FK>>
+	* created_at : timestamptz
+}
+
+entity "import_issues" as import_issues {
+	* id : bigint <<PK>>
+	--
+	* upload_id : bigint <<FK>>
+	* sheet_name : text
+	row_number : integer
+	column_name : text
+	* severity : varchar(8) <<error | warning>>
+	* rule_code : varchar(16) <<VAL-xx>>
+	* message : text
+}
+
+entity "employees" as employees {
+	* id : bigint <<PK>>
+	--
+	* code : integer <<UNIQUE, ID del sistema de origen>>
+	* first_name : text
+	last_name : text
+	* company : text
+}
+
+entity "departments" as departments {
+	* id : bigint <<PK>>
+	--
+	code : integer <<UNIQUE>>
+	* name : text
+	* name_key : text <<UNIQUE>>
+}
+
+entity "positions" as positions {
+	* id : bigint <<PK>>
+	--
+	code : integer <<UNIQUE>>
+	name : text
+	name_key : text <<UNIQUE>>
+}
+
+entity "attendance_marks" as attendance_marks {
+	* id : bigint <<PK>>
+	--
+	* upload_id : bigint <<FK>>
+	* employee_id : bigint <<FK>>
+	* department_id : bigint <<FK>>
+	* position_id : bigint <<FK>>
+	* marked_at : timestamp
+	* kind : varchar(8) <<entry | exit>>
+	* method : text
+	* source : text
+}
+
+entity "leave_requests" as leave_requests {
+	* id : bigint <<PK>>
+	--
+	* upload_id : bigint <<FK>>
+	* employee_id : bigint <<FK>>
+	* department_id : bigint <<FK>>
+	* starts_at : timestamp
+	* ends_at : timestamp
+	reason : text
+	* recorded_at : timestamp
+	* leave_type : text
+	* status : varchar(16) <<approved | rejected | revoked>>
+	approval_comment : text
+	approver : text
+}
+
+entity "monthly_hours" as monthly_hours {
+	* id : bigint <<PK>>
+	--
+	* upload_id : bigint <<FK>>
+	* employee_id : bigint <<FK>>
+	* department_id : bigint <<FK>>
+	* position_id : bigint <<FK>>
+	* period_year : smallint
+	* period_month : smallint <<1 a 12>>
+	* supplementary_minutes : integer <<no negativo>>
+	* extra_minutes : integer <<no negativo>>
+	* night_minutes : integer <<no negativo, default 0>>
+	notes : text
+}
+
+entity "dashboard_configs" as dashboard_configs {
+	* id : bigint <<PK>>
+	--
+	* name : text
+	* config_json : jsonb
+	* published : boolean <<default false>>
+	* created_by : bigint <<FK>>
+	* updated_at : timestamptz
+}
+
+entity "audit_events" as audit_events {
+	* id : bigint <<PK>>
+	--
+	user_id : bigint <<FK, null>>
+	* action : text
+	* resource_type : text
+	resource_id : bigint
+	detail : jsonb
+	* created_at : timestamptz
+}
+
+users ||--o{ sessions
+users ||--o{ uploads
+users ||--o{ dashboard_configs
+users |o--o{ audit_events
+uploads ||--o{ import_issues
+uploads ||--o{ attendance_marks
+uploads ||--o{ leave_requests
+uploads ||--o{ monthly_hours
+employees ||--o{ attendance_marks
+employees ||--o{ leave_requests
+employees ||--o{ monthly_hours
+departments ||--o{ attendance_marks
+departments ||--o{ leave_requests
+departments ||--o{ monthly_hours
+positions ||--o{ attendance_marks
+positions ||--o{ monthly_hours
+
+note as N_keys
+	Claves naturales (restricciones UNIQUE)
+	- attendance_marks: (employee_id, marked_at, kind)
+	- leave_requests: (employee_id, starts_at, ends_at, leave_type)
+	- monthly_hours: (employee_id, period_year, period_month)
+	Con ellas la reimportación no duplica registros (RN-12).
+	En los tres, upload_id es el último archivo que creó o actualizó el registro.
+end note
+
+note as N_rules
+	Reglas del modelo
+	- Cambios respecto de arquitectura.md: import_errors pasa a import_issues
+	  (incluye advertencias), datasets y dataset_rows se reemplazan por las tablas
+	  de datos y se agregan sessions, employees, departments y positions.
+	- uploads.status: rejected, validated, queued, processing, imported, failed,
+	  discarded (RN-08). No hay uploads.file_type: el tipo se reconoce por hoja y
+	  queda en uploads.summary.
+	- El departamento y el cargo van en cada registro, no en employees (RN-11).
+	- name_key es el nombre sin mayúsculas, tildes ni espacios sobrantes.
+	- positions.code se llena desde marcaciones y positions.name desde el
+	  consolidado; al menos uno de los dos no es nulo (C-05).
+	- Duraciones en minutos enteros (RN-13). Fechas y horas en hora local de
+	  Ecuador, sin zona horaria (RN-16); las columnas de auditoría usan timestamptz.
+	- reason, approval_comment y notes son texto libre: solo el admin lo ve (RN-05).
+	- audit_events.user_id es nulo si el usuario no existe (login fallido);
+	  detail guarda, por ejemplo, el usuario que se intentó.
+	- audit_events.resource_id no tiene FK: apunta a distintas tablas según resource_type.
+	- dashboard_configs.config_json guarda fuente (marks, leaves o monthly_hours),
+	  dimensión, medida, gráfico y filtros.
+	- Las horas trabajadas no se guardan: se calculan al consultar (RN-14).
+end note
+
+note as N_indexes
+	Índices propuestos (además de PK y UNIQUE)
+	- sessions(user_id), sessions(expires_at)
+	- uploads(status), uploads(uploaded_by)
+	- import_issues(upload_id, severity)
+	- attendance_marks(marked_at), attendance_marks(department_id, marked_at)
+	- leave_requests(starts_at, ends_at), leave_requests(status), leave_requests(leave_type)
+	- monthly_hours(period_year, period_month), monthly_hours(department_id)
+	- dashboard_configs(published)
+	- audit_events(created_at), audit_events(user_id), audit_events(action, created_at)
+end note
+@enduml
