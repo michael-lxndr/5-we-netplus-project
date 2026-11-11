@@ -1,0 +1,333 @@
+
+@startuml casos-de-uso
+title Casos de uso - Netplus
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam usecase {
+	BackgroundColor #F7F9FC
+	BorderColor #183153
+	ArrowColor #183153
+}
+skinparam actor {
+	BackgroundColor #E6FFFB
+	BorderColor #183153
+}
+
+actor "Usuario\nautenticado" as User
+actor "Administrador\n(admin)" as Admin
+actor "Consultor\n(viewer)" as Viewer
+
+User <|-- Admin
+User <|-- Viewer
+
+rectangle "Netplus" {
+	package "Acceso" {
+		usecase "Iniciar sesión" as UC_Login
+		usecase "Cerrar sesión" as UC_Logout
+		usecase "Crear primer\nadministrador" as UC_Setup
+	}
+
+	package "Importación de Excel" {
+		usecase "Cargar archivo Excel" as UC_Upload
+		usecase "Reconocer tipo de hoja\ny período" as UC_Detect
+		usecase "Validar archivo" as UC_Validate
+		usecase "Revisar errores y\nvolver a cargar" as UC_Fix
+		usecase "Revisar vista previa" as UC_Preview
+		usecase "Elegir hojas" as UC_Sheets
+		usecase "Confirmar importación" as UC_Confirm
+		usecase "Importar datos" as UC_Import
+		usecase "Procesar con worker" as UC_Worker
+		usecase "Descartar carga" as UC_Discard
+		usecase "Consultar estado de\nimportaciones" as UC_Status
+	}
+
+	package "Dashboards y reportes" {
+		usecase "Consultar dashboards" as UC_View
+		usecase "Aplicar filtros y\nrango de fechas" as UC_Filter
+		usecase "Consultar tablas\nde detalle" as UC_Detail
+		usecase "Ver motivos y comentarios\nde permisos" as UC_Text
+		usecase "Exportar reporte\npermitido" as UC_Export
+		usecase "Configurar gráficos\ny filtros" as UC_Config
+		usecase "Publicar dashboard" as UC_Publish
+	}
+
+	package "Administración" {
+		usecase "Gestionar usuarios\nviewer" as UC_Users
+		usecase "Consultar auditoría" as UC_Audit
+		usecase "Respaldar y restaurar\ndatos" as UC_Backup
+	}
+}
+
+User --> UC_Login
+User --> UC_Logout
+User --> UC_View
+User --> UC_Detail
+User --> UC_Export
+
+Admin --> UC_Setup
+Admin --> UC_Upload
+Admin --> UC_Confirm
+Admin --> UC_Discard
+Admin --> UC_Status
+Admin --> UC_Text
+Admin --> UC_Config
+Admin --> UC_Publish
+Admin --> UC_Users
+Admin --> UC_Audit
+Admin --> UC_Backup
+
+UC_Upload .> UC_Detect : <<include>>
+UC_Upload .> UC_Validate : <<include>>
+UC_Upload .> UC_Preview : <<include>>
+UC_Fix .> UC_Validate : <<extend>>
+UC_Confirm .> UC_Sheets : <<include>>
+UC_Confirm .> UC_Import : <<include>>
+UC_Worker .> UC_Import : <<extend>>
+UC_Filter .> UC_View : <<extend>>
+UC_Text .> UC_Detail : <<extend>>
+
+note right of UC_View
+	viewer: solo dashboards publicados.
+	admin: todos los dashboards.
+end note
+
+note right of UC_Text
+	Solo admin (RN-05). El viewer
+	nunca ve ni exporta texto libre.
+end note
+
+note right of UC_Preview
+	Muestra tipo y período detectados,
+	registros nuevos, actualizados y sin
+	cambios, y advertencias.
+end note
+
+note right of UC_Worker
+	Solo en modo servidor y con
+	una importación pesada (RN-19).
+end note
+
+note right of UC_Setup
+	Se ejecuta una única vez,
+	durante la instalación.
+end note
+@enduml
+
+@startuml secuencia-iniciar-sesion
+title Secuencia - Iniciar sesión
+
+skinparam shadowing false
+skinparam sequence {
+	ParticipantBackgroundColor #F7F9FC
+	ParticipantBorderColor #183153
+	ActorBackgroundColor #E6FFFB
+	ActorBorderColor #183153
+	ArrowColor #183153
+	LifeLineBorderColor #183153
+}
+autonumber
+
+actor Usuario as User
+participant "Frontend\n(React)" as FE
+participant "API Go" as API
+database "PostgreSQL" as DB
+
+User -> FE : Introducir usuario y contraseña
+FE -> API : POST /api/auth/login
+API -> DB : Contar login_failed recientes del usuario (RN-17)
+
+alt 5 o más intentos fallidos en 15 minutos
+	API -> DB : Registrar audit_event (login bloqueado)
+	API --> FE : 429 Too Many Requests
+	FE --> User : Mostrar bloqueo temporal
+else puede intentar
+	API -> DB : Buscar usuario por username
+	DB --> API : Usuario (o ninguno)
+	alt usuario inexistente, inactivo o contraseña incorrecta
+		API -> DB : Registrar audit_event (login_failed)
+		API --> FE : 401 con mensaje genérico
+		FE --> User : Mostrar error
+	else credenciales válidas y usuario activo
+		API -> API : Verificar hash argon2id
+		API -> DB : Crear sesión y registrar audit_event (login)
+		API --> FE : 200 + cookie HttpOnly, Secure, SameSite=Lax
+		FE --> User : Mostrar la vista según el rol
+	end
+end
+@enduml
+
+@startuml secuencia-importar-excel
+title Secuencia - Importar un Excel (rol admin)
+
+skinparam shadowing false
+skinparam sequence {
+	ParticipantBackgroundColor #F7F9FC
+	ParticipantBorderColor #183153
+	ActorBackgroundColor #E6FFFB
+	ActorBorderColor #183153
+	ArrowColor #183153
+	LifeLineBorderColor #183153
+}
+autonumber
+
+actor Administrador as Admin
+participant "Frontend\n(React)" as FE
+participant "API Go" as API
+participant "Lector Excelize\n+ parser por tipo" as XLS
+database "./data" as Files
+database "PostgreSQL" as DB
+queue "Redis" as Redis
+participant "Worker Go" as Worker
+
+== Fase 1: validar y mostrar vista previa ==
+
+Admin -> FE : Elegir archivo .xlsx
+FE -> API : POST /api/uploads (multipart)
+API -> API : Verificar sesión y rol admin
+
+alt sin sesión o rol viewer
+	API -> DB : Registrar audit_event (acceso denegado)
+	API --> FE : 401 / 403
+	FE --> Admin : Acceso denegado
+else rol admin
+	API -> API : Validar tamaño máximo y extensión (VAL-01)
+	API -> XLS : Abrir con io.Reader y listar hojas
+
+	loop por cada hoja
+		XLS -> XLS : Reconocer tipo (celda A1 y encabezados)\ny período del consolidado
+		XLS -> XLS : Recorrer filas con iterador y aplicar reglas VAL
+	end
+
+	XLS --> API : Hojas reconocidas, errores y advertencias
+	API -> DB : Comparar con registros existentes\n(nuevos, actualizados, sin cambios)
+
+	alt ninguna hoja válida
+		API -> DB : Guardar upload (rejected) e import_issues
+		API --> FE : 422 con errores por hoja, fila y columna
+		FE --> Admin : Mostrar errores\n(permitir corregir y volver a cargar)
+	else al menos una hoja válida
+		API -> Files : Guardar archivo original
+		API -> DB : Guardar upload (validated), summary,\nimport_issues y audit_event
+		API --> FE : 201 con vista previa por hoja
+		FE --> Admin : Mostrar tipo, período, conteos\ny advertencias; las hojas con errores\nno se pueden elegir
+	end
+end
+
+== Fase 2: confirmar o descartar ==
+
+alt el admin descarta la carga
+	Admin -> FE : Descartar
+	FE -> API : POST /api/uploads/{id}/discard
+	API -> Files : Eliminar archivo original
+	API -> DB : Estado discarded y audit_event
+	API --> FE : 200
+else el admin elige hojas y confirma
+	Admin -> FE : Elegir hojas y confirmar
+	FE -> API : POST /api/uploads/{id}/confirm (hojas elegidas)
+	API -> API : Verificar sesión, rol admin\ny estado validated
+
+	alt modo servidor e importación pesada (RN-19)
+		API -> Redis : Encolar importación
+		API -> DB : Estado del upload: queued
+		API --> FE : 202 Accepted
+		Worker -> Redis : Tomar tarea
+		Worker -> DB : Estado del upload: processing
+		Worker -> Files : Leer archivo original
+		Worker -> DB : Transacción: empleados, departamentos, cargos\ny registros según RN-12
+		Worker -> DB : Estado imported, summary y audit_event
+		FE -> API : Consultar estado de la importación
+		API --> FE : imported + resumen
+	else se procesa en la API
+		API -> DB : Estado del upload: processing
+		API -> Files : Leer archivo original
+		API -> DB : Transacción: empleados, departamentos, cargos\ny registros según RN-12
+		API -> DB : Estado imported, summary y audit_event
+		API --> FE : 200 con resumen
+	end
+
+	opt falla el procesamiento
+		API -> DB : Deshacer la transacción (RNF-17)\nestado failed y audit_event
+		API --> FE : Estado failed con el motivo
+	end
+
+	FE --> Admin : Mostrar resumen de importación
+end
+@enduml
+
+@startuml secuencia-consultar-dashboard
+title Secuencia - Consultar un dashboard
+
+skinparam shadowing false
+skinparam sequence {
+	ParticipantBackgroundColor #F7F9FC
+	ParticipantBorderColor #183153
+	ActorBackgroundColor #E6FFFB
+	ActorBorderColor #183153
+	ArrowColor #183153
+	LifeLineBorderColor #183153
+}
+autonumber
+
+actor "Usuario\n(viewer o admin)" as User
+participant "Frontend\n(React + ECharts)" as FE
+participant "API Go" as API
+database "PostgreSQL" as DB
+
+User -> FE : Abrir la lista de dashboards
+FE -> API : GET /api/dashboards
+API -> API : Verificar sesión y rol
+
+alt rol viewer
+	API -> DB : Dashboards con published = true
+else rol admin
+	API -> DB : Todos los dashboards
+end
+DB --> API : Dashboards permitidos
+API --> FE : Lista de dashboards
+FE --> User : Mostrar dashboards
+
+User -> FE : Elegir dashboard, rango de fechas y filtros
+FE -> API : GET /api/dashboards/{id}/data?from=...&to=...&departmentId=...
+
+alt viewer y dashboard no publicado
+	API -> DB : Registrar audit_event (acceso denegado)
+	API --> FE : 404 sin datos
+	FE --> User : Dashboard no disponible
+else acceso permitido
+	API -> DB : Consultar marks, leaves o monthly_hours\ncon los filtros (permisos: solapamiento, RN-15)
+	DB --> API : Filas agregadas
+
+	alt rol viewer
+		API -> API : Quitar texto libre del resultado (RN-05)
+	end
+
+	alt sin datos en el rango
+		API --> FE : 200 con resultado vacío
+		FE --> User : Mostrar "sin datos"
+	else con datos
+		API --> FE : 200 con datos
+		FE --> User : Dibujar gráficos y tablas
+	end
+end
+
+opt exportar reporte
+	User -> FE : Pedir exportación (CSV o XLSX)
+	FE -> API : GET /api/dashboards/{id}/export?format=csv
+	API -> API : Verificar acceso (RN-24)
+	API -> DB : Registrar audit_event (exportación)
+	API --> FE : Archivo con los mismos datos filtrados
+	FE --> User : Descargar reporte
+end
+@enduml
+
+' Casos de uso y secuencias de Netplus (versión final).
+' Este archivo contiene varios diagramas (uno por bloque @startuml ... @enduml):
+'   1. casos-de-uso
+'   2. secuencia-iniciar-sesion
+'   3. secuencia-importar-excel (validar y vista previa, confirmar, descartar)
+'   4. secuencia-consultar-dashboard
+' El flujo de actividad general está en flujo-usuario.puml.
+' Las rutas HTTP de las secuencias son ilustrativas.
+' Las reglas VAL-xx, RN-xx y RF-xx están definidas en 01-analisis.md.

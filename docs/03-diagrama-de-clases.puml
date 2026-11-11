@@ -1,0 +1,446 @@
+@startuml diagrama-de-clases-dominio
+title Diagrama de clases - dominio de Netplus
+
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam class {
+	BackgroundColor #F7F9FC
+	BorderColor #183153
+	ArrowColor #183153
+}
+skinparam enum {
+	BackgroundColor #E6FFFB
+	BorderColor #0D9488
+}
+hide empty members
+
+note as N_conventions
+	Convenciones
+	- Nombres de clases y atributos en inglés (camelCase).
+	- Las tablas usan snake_case (ver 04-modelo-de-datos.puml).
+	- Este diagrama muestra clases, no instancias.
+	- Los servicios están en el diagrama siguiente.
+end note
+
+enum Role {
+	admin
+	viewer
+}
+
+enum UploadStatus {
+	rejected
+	validated
+	queued
+	processing
+	imported
+	failed
+	discarded
+}
+
+enum FileType {
+	marks
+	leaves
+	monthly_hours
+}
+
+enum MarkKind {
+	entry
+	exit
+}
+
+enum LeaveStatus {
+	approved
+	rejected
+	revoked
+}
+
+enum Severity {
+	error
+	warning
+}
+
+enum ChartType {
+	bar
+	line
+	pie
+}
+
+class User {
+	- id : long
+	- username : string
+	- passwordHash : string
+	- role : Role
+	- active : boolean
+	- createdAt : datetime
+	+ verifyPassword(plain : string) : boolean
+	+ changePassword(plain : string)
+	+ activate()
+	+ deactivate()
+	+ canLogin() : boolean
+}
+
+class Session {
+	- tokenHash : string
+	- expiresAt : datetime
+	- createdAt : datetime
+	+ isExpired() : boolean
+}
+
+class Upload {
+	- id : long
+	- originalName : string
+	- storageKey : string [0..1]
+	- status : UploadStatus
+	- summary : ImportSummary [0..1]
+	- uploadedBy : User
+	- createdAt : datetime
+	+ markRejected()
+	+ markValidated(summary : ImportSummary)
+	+ markQueued()
+	+ markProcessing()
+	+ markImported(summary : ImportSummary)
+	+ markFailed(reason : string)
+	+ markDiscarded()
+}
+
+class ImportSummary <<value object>> {
+	- sheets : List<SheetSummary>
+}
+
+class SheetSummary <<value object>> {
+	- sheetName : string
+	- fileType : FileType
+	- periodYear : int [0..1]
+	- periodMonth : int [0..1]
+	- rowsRead : int
+	- created : int
+	- updated : int
+	- unchanged : int
+	- selected : boolean
+}
+
+class ImportIssue {
+	- id : long
+	- sheetName : string
+	- rowNumber : int [0..1]
+	- columnName : string [0..1]
+	- severity : Severity
+	- ruleCode : string
+	- message : string
+}
+
+class Employee {
+	- id : long
+	- code : int
+	- firstName : string
+	- lastName : string [0..1]
+	- company : string
+}
+
+class Department {
+	- id : long
+	- code : int [0..1]
+	- name : string
+	- nameKey : string
+}
+
+class Position {
+	- id : long
+	- code : int [0..1]
+	- name : string [0..1]
+	- nameKey : string [0..1]
+}
+
+abstract class ImportedRecord {
+	- id : long
+}
+
+class AttendanceMark {
+	- markedAt : datetime
+	- kind : MarkKind
+	- method : string
+	- source : string
+}
+
+class LeaveRequest {
+	- startsAt : datetime
+	- endsAt : datetime
+	- reason : string [0..1]
+	- recordedAt : datetime
+	- leaveType : string
+	- status : LeaveStatus
+	- approvalComment : string [0..1]
+	- approver : string [0..1]
+	+ durationHours() : decimal
+	+ overlaps(from : date, to : date) : boolean
+}
+
+class MonthlyHours {
+	- periodYear : int
+	- periodMonth : int
+	- supplementaryMinutes : int
+	- extraMinutes : int
+	- nightMinutes : int
+	- notes : string [0..1]
+	+ totalMinutes() : int
+}
+
+class DashboardConfig {
+	- id : long
+	- name : string
+	- published : boolean
+	- createdBy : User
+	- updatedAt : datetime
+	+ publish()
+	+ unpublish()
+	+ isVisibleTo(user : User) : boolean
+}
+
+class ChartConfig <<value object>> {
+	- source : FileType
+	- type : ChartType
+	- title : string
+	- dimension : string
+	- measure : string
+}
+
+class FilterConfig <<value object>> {
+	- field : string
+	- kind : string
+}
+
+class AuditEvent {
+	- id : long
+	- userId : long [0..1]
+	- action : string
+	- resourceType : string
+	- resourceId : long [0..1]
+	- detail : string [0..1]
+	- createdAt : datetime
+}
+
+User "1" --> "0..*" Upload : uploadedBy
+User "1" --> "0..*" Session
+User "1" --> "0..*" DashboardConfig : createdBy
+User "0..1" <-- "0..*" AuditEvent : actor
+Upload "1" *-- "0..*" ImportIssue
+Upload "1" o-- "0..1" ImportSummary
+ImportSummary "1" *-- "1..*" SheetSummary
+Upload "1" --> "0..*" ImportedRecord : último archivo\nque lo escribió
+Employee "1" --> "0..*" ImportedRecord
+Department "1" --> "0..*" ImportedRecord
+Position "0..1" --> "0..*" AttendanceMark
+Position "0..1" --> "0..*" MonthlyHours
+ImportedRecord <|-- AttendanceMark
+ImportedRecord <|-- LeaveRequest
+ImportedRecord <|-- MonthlyHours
+DashboardConfig "1" *-- "0..*" ChartConfig
+DashboardConfig "1" *-- "0..*" FilterConfig
+
+User --> Role
+Upload --> UploadStatus
+SheetSummary --> FileType
+ChartConfig --> FileType
+ChartConfig --> ChartType
+AttendanceMark --> MarkKind
+LeaveRequest --> LeaveStatus
+ImportIssue --> Severity
+
+note right of Upload
+	Estados:
+	rejected (sin archivo guardado)
+	validated -> queued -> processing
+	validated -> processing (la API procesa)
+	validated -> discarded
+	processing -> imported | failed
+end note
+
+note bottom of ImportedRecord
+	Clave natural y reimportación (RN-12):
+	AttendanceMark: empleado + fecha y hora + tipo (se omite)
+	LeaveRequest: empleado + inicio + fin + código de pago (se actualiza)
+	MonthlyHours: empleado + año + mes (se reemplaza)
+end note
+
+note bottom of ChartConfig
+	ChartConfig y FilterConfig son objetos
+	de valor guardados dentro de config_json.
+end note
+@enduml
+
+@startuml diagrama-de-clases-servicios
+title Diagrama de clases - importación y servicios de Netplus
+
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam class {
+	BackgroundColor #F7F9FC
+	BorderColor #183153
+	ArrowColor #183153
+}
+skinparam enum {
+	BackgroundColor #E6FFFB
+	BorderColor #0D9488
+}
+skinparam package {
+	BorderColor #183153
+}
+hide empty members
+
+note as N_conventions
+	Las clases en gris claro sin detalle (User, Upload, etc.) se definen
+	en el diagrama de dominio. Los servicios consultan AuthorizationPolicy
+	en el backend (RN-22).
+end note
+
+package "Dominio (resumen)" {
+	class User
+	class Session
+	class Upload
+	class ImportIssue
+	abstract class ImportedRecord
+	class AttendanceMark
+	class DashboardConfig
+	enum Role
+	enum FileType
+}
+
+package "Importación" {
+	class ExcelReader {
+		+ open(reader : io.Reader) : Workbook
+		+ sheetNames() : List<string>
+		+ rows(sheet : string) : RowIterator
+	}
+
+	interface SheetParser {
+		+ fileType() : FileType
+		+ matches(header : SheetHeader) : boolean
+		+ parse(rows : RowIterator) : ParseResult
+	}
+
+	class MarksSheetParser
+	class LeavesSheetParser
+	class MonthlyHoursSheetParser
+
+	class CellNormalizer {
+		+ toInt(cell : any) : int
+		+ toDate(cell : any, layout : string) : datetime
+		+ toMinutes(cell : any) : int
+		+ cleanText(cell : any) : string
+		+ nameKey(text : string) : string
+	}
+
+	class ParseResult <<value object>> {
+		- records : List<ImportedRecord>
+		- issues : List<ImportIssue>
+		+ hasErrors() : boolean
+	}
+}
+
+package "Servicios de aplicación" {
+	class AppConfig {
+		- mode : string
+		- webBindIp : string
+		- cookieSecure : boolean
+		- maxUploadBytes : long
+		- heavyRows : int
+		- heavyBytes : long
+		- loginAttemptLimit : int
+		+ isServerMode() : boolean
+	}
+
+	class AuthorizationPolicy {
+		+ can(role : Role, action : string) : boolean
+		+ canSeeFreeText(role : Role) : boolean
+	}
+
+	class AuthService {
+		+ login(username : string, password : string) : Session
+		+ logout(session : Session)
+		- checkAttemptLimit(username : string)
+	}
+
+	class UserService {
+		+ createFirstAdmin(username : string, password : string) : User
+		+ createViewer(username : string, password : string) : User
+		+ resetPassword(userId : long, plain : string)
+		+ setActive(userId : long, active : boolean)
+	}
+
+	class ImportService {
+		+ preview(file : io.Reader, actor : User) : Upload
+		+ confirm(uploadId : long, sheets : List<string>, actor : User)
+		+ discard(uploadId : long, actor : User)
+		+ isHeavy(upload : Upload) : boolean
+	}
+
+	class ImportWorker {
+		+ run()
+	}
+
+	class WorkedHoursCalculator {
+		+ pairMarks(marks : List<AttendanceMark>) : List<WorkSession>
+		+ incomplete(marks : List<AttendanceMark>) : List<AttendanceMark>
+	}
+
+	class DashboardService {
+		+ save(config : DashboardConfig)
+		+ publish(id : long)
+		+ listFor(user : User) : List<DashboardConfig>
+		+ query(id : long, filters : List<FilterConfig>, from : date, to : date, actor : User) : ResultSet
+		+ export(id : long, format : string, actor : User) : File
+	}
+
+	class AuditService {
+		+ record(userId : long, action : string, resourceType : string, resourceId : long)
+	}
+}
+
+' Importación
+SheetParser <|.. MarksSheetParser
+SheetParser <|.. LeavesSheetParser
+SheetParser <|.. MonthlyHoursSheetParser
+MarksSheetParser ..> CellNormalizer
+LeavesSheetParser ..> CellNormalizer
+MonthlyHoursSheetParser ..> CellNormalizer
+SheetParser ..> ParseResult
+SheetParser ..> FileType
+ParseResult ..> ImportedRecord
+ParseResult ..> ImportIssue
+
+' Servicios
+AuthService ..> User
+AuthService ..> Session
+AuthService ..> AuditService
+UserService ..> User
+UserService ..> AuditService
+ImportService ..> ExcelReader
+ImportService ..> SheetParser
+ImportService ..> Upload
+ImportService ..> AppConfig
+ImportService ..> AuditService
+ImportWorker ..> ImportService : confirm
+WorkedHoursCalculator ..> AttendanceMark
+DashboardService ..> DashboardConfig
+DashboardService ..> WorkedHoursCalculator
+DashboardService ..> AuthorizationPolicy
+DashboardService ..> AuditService
+AuthorizationPolicy ..> Role
+
+note bottom of ImportWorker
+	Solo en modo servidor.
+	Toma tareas desde Redis.
+end note
+
+note bottom of CellNormalizer
+	Absorbe las rarezas de los archivos de ejemplo:
+	texto en lugar de fechas y números, duraciones
+	[h]:mm o h:mm, IDs de texto o número y espacios sobrantes.
+end note
+@enduml
+
+' Diagramas de clases de Netplus (versión final).
+' Este archivo contiene dos diagramas:
+'   1. diagrama-de-clases-dominio: entidades, objetos de valor y enumeraciones.
+'   2. diagrama-de-clases-servicios: importación de Excel y servicios de aplicación.
+' Las reglas RN-xx y VAL-xx están definidas en 01-analisis.md.
