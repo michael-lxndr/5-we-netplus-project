@@ -44,10 +44,40 @@ docker compose exec frontend node --version
 docker compose down
 ```
 
-Para trabajar dentro de VS Code, instala la extensión **Dev Containers** y usa
-`Dev Containers: Reopen in Container`. La configuración de
-[.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) reutiliza
-el mismo Compose.
+Para que VS Code reconozca Go, React y TypeScript sin instalar nada en el host,
+instala la extensión **Dev Containers** y usa
+`Dev Containers: Reopen in Container`. Hay dos configuraciones, que reutilizan
+el mismo Compose:
+
+- [.devcontainer/frontend](.devcontainer/frontend): Node, React y TypeScript.
+- [.devcontainer/api](.devcontainer/api): Go (con hot reload mediante Air).
+
+Se abre una ventana de VS Code por cada una.
+
+### Flujo diario con VS Code
+
+1. Abrir Docker Desktop y esperar a que esté en verde.
+2. En la carpeta del proyecto: `docker compose up -d --build`. Es obligatorio
+   hacerlo antes de abrir los dev containers: ellos no construyen las imágenes,
+   solo las usan. Con la caché es rápido.
+3. Abrir el proyecto en VS Code y ejecutar
+   `Dev Containers: Reopen in Container` → **Netplus - Frontend (Node)**.
+4. Abrir **otra ventana** de VS Code (`File → New Window`), abrir la misma
+   carpeta y ejecutar `Dev Containers: Reopen in Container` →
+   **Netplus - API (Go)**.
+
+Cada ventana debe quedarse en su propio contenedor; no cambiar de uno a otro
+dentro de la misma ventana.
+
+### Si algo falla
+
+| Síntoma | Solución |
+|---|---|
+| Error "An error occurred setting up the container" | Comprobar que Docker Desktop esté en verde, ejecutar `docker compose up -d --build` y pulsar **Retry**. |
+| Error "pull access denied for netplus/..." | Faltan las imágenes locales: ejecutar `docker compose up -d --build`. |
+| Menú "Pick an action to help resolve the problem" | Pulsar **Reload Window**. Si sigue igual: `docker compose ps` y, si falta algún servicio, `docker compose up -d`. |
+| Sigue sin abrir | `docker compose down` y luego `docker compose up -d --build`. No se pierden datos (los volúmenes se conservan; no usar `-v`). |
+| Ver el error real | Pestaña **Output** → desplegable **Dev Containers**. |
 
 ## Arrancar como servidor para varios equipos
 
