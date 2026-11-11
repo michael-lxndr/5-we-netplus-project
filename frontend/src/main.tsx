@@ -1,17 +1,15 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { Login } from "./Login";
 
-function App() {
-  return (
-    <main>
-      <h1>Netplus</h1>
-      <p>Entorno inicial listo para cargar Excel y construir dashboards.</p>
-    </main>
-  );
-}
+const stylesheet = document.createElement("link");
+
+stylesheet.rel = "stylesheet";
+stylesheet.href = new URL("./styles.css", import.meta.url).href;
+document.head.appendChild(stylesheet);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <Login />
   </StrictMode>,
 );
