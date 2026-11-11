@@ -1,38 +1,63 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
+
+	"netplus/backend/internal/api"
+	"netplus/backend/internal/db"
 )
 
-type healthResponse struct {
-	Status string `json:"status"`
-	Mode   string `json:"mode"`
+func env(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	if v, err := strconv.Atoi(os.Getenv(key)); err == nil && v > 0 {
+		return v
+	}
+	return fallback
 }
 
 func main() {
-	port := os.Getenv("APP_PORT")
-	if port == "" {
-		port = "8080"
-	}
+	ctx := context.Background()
 
-	mode := os.Getenv("APP_MODE")
-	if mode == "" {
-		mode = "local"
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL es obligatoria")
 	}
-
-	mux := http.NewServeMux()
-	health := func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(healthResponse{Status: "ok", Mode: mode})
-	}
-	mux.HandleFunc("/health", health)
-	mux.HandleFunc("/api/health", health)
-
-	log.Printf("Netplus API listening on :%s in %s mode", port, mode)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	pool, err := db.Open(ctx, dbURL)
+	if err != nil {
 		log.Fatal(err)
 	}
+	defer pool.Close()
+	if err := db.Migrate(ctx, pool); err != nil {
+		log.Fatal(err)
+	}
+
+	mode := env("APP_MODE", "local")
+	srv := api.New(pool, api.Config{
+		Mode: mode,
+		// DEC-12: Secure activo salvo que se desactive explícitamente (solo desarrollo sobre http://IP).
+		CookieSecure:    env("COOKIE_SECURE", "true") != "false",
+		SessionTTL:      time.Duration(envInt("SESSION_HOURS", 12)) * time.Hour,
+		LoginMaxFails:   envInt("LOGIN_MAX_ATTEMPTS", 5),
+		LoginFailWindow: time.Duration(envInt("LOGIN_WINDOW_MINUTES", 15)) * time.Minute,
+	})
+
+	addr := ":" + env("APP_PORT", "8080")
+	log.Printf("Netplus API escuchando en %s (modo %s)", addr, mode)
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	log.Fatal(server.ListenAndServe())
 }
