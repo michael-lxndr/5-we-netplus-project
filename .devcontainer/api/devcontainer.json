@@ -1,0 +1,24 @@
+{
+  "name": "Netplus - API (Go)",
+  "dockerComposeFile": ["../../compose.yaml", "../compose.devcontainer.yaml"],
+  "service": "api",
+  "workspaceFolder": "/app",
+  "shutdownAction": "none",
+  "overrideCommand": false,
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go"
+      ],
+      "settings": {
+        "go.toolsManagement.autoUpdate": true,
+        "go.useLanguageServer": true,
+        "go.formatTool": "gofmt",
+        "[go]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "golang.go"
+        }
+      }
+    }
+  }
+}
