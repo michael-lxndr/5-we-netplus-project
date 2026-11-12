@@ -1,47 +1,6 @@
+# Solo servicios de datos. Go y Node corren en el host (ver mise.toml).
+# Levantar con `mise run db` y detener con `mise run db:stop`.
 services:
-  api:
-    image: netplus/api:dev
-    build:
-      context: ./backend
-      target: development
-    environment:
-      APP_MODE: ${APP_MODE:-local}
-      APP_PORT: 8080
-      DATABASE_URL: postgres://${POSTGRES_USER:-netplus}:${POSTGRES_PASSWORD:-netplus_dev}@postgres:5432/${POSTGRES_DB:-netplus}?sslmode=disable
-      REDIS_ADDR: redis:6379
-      # true con HTTPS. En localhost el navegador acepta la cookie Secure; false solo para http://IP en desarrollo.
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
-    volumes:
-      - ./backend:/app
-      - ./data:/app/data
-      - go-build-cache:/root/.cache/go-build
-      - go-mod-cache:/go/pkg/mod
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: air -c .air.toml
-    restart: unless-stopped
-
-  frontend:
-    image: netplus/frontend:dev
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    working_dir: /app
-    environment:
-      VITE_API_URL: ${VITE_API_URL:-/api}
-    ports:
-      - "${WEB_BIND_IP:-127.0.0.1}:${WEB_PORT:-5173}:5173"
-    volumes:
-      - ./frontend:/app
-      - frontend-node-modules:/app/node_modules
-    command: npm run dev -- --host 0.0.0.0
-    depends_on:
-      - api
-    restart: unless-stopped
-
   postgres:
     image: postgres:17-alpine
     environment:
@@ -57,11 +16,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_BIND_IP:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -69,11 +29,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    restart: unless-stopped
 
 volumes:
-  frontend-node-modules:
-  go-build-cache:
-  go-mod-cache:
   postgres-data:
   redis-data:

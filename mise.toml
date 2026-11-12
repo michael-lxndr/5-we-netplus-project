@@ -1,0 +1,65 @@
+# Versiones y tareas del proyecto. Instalar mise: https://mise.jdx.dev
+#   mise trust && mise install   (una sola vez)
+#   mise run dev                 (arranca todo)
+
+[tools]
+go = "1.24"
+node = "22"
+
+[env]
+# Variables de .env (credenciales de Postgres, DATABASE_URL, ...).
+_.file = ".env"
+APP_PORT = "8080"
+COOKIE_SECURE = "false"
+# Destino del proxy /api de Vite.
+API_PROXY_TARGET = "http://localhost:8080"
+
+[tasks.setup]
+description = "Instala dependencias de la API y del frontend"
+depends = ["setup:api", "setup:web"]
+
+[tasks."setup:api"]
+dir = "backend"
+run = "go mod download"
+hide = true
+
+[tasks."setup:web"]
+dir = "frontend"
+run = "npm install"
+hide = true
+
+[tasks.db]
+description = "Levanta Postgres y Redis en Docker (solo hace falta cuando se trabaja)"
+run = "docker compose up -d --wait postgres redis"
+
+[tasks."db:stop"]
+description = "Detiene Postgres y Redis y libera los puertos (los datos se conservan)"
+run = "docker compose stop"
+
+[tasks.api]
+description = "API Go con recarga automática (Air)"
+depends = ["db"]
+dir = "backend"
+run = "go run github.com/air-verse/air@v1.61.7 -c .air.toml"
+
+[tasks."api:nodocker"]
+description = "API Go con recarga, SIN levantar Docker (Postgres/Redis ya disponibles en el equipo)"
+dir = "backend"
+run = "go run github.com/air-verse/air@v1.61.7 -c .air.toml"
+
+[tasks.web]
+description = "Frontend Vite en http://localhost:5173"
+dir = "frontend"
+run = "npm run dev"
+
+[tasks.check]
+description = "Comprueba que API, frontend, proxy y base de datos funcionan (con dev corriendo)"
+run = "node scripts/check.mjs"
+
+[tasks.dev]
+description = "Base de datos (Docker) + API + frontend"
+depends = ["api", "web"]
+
+[tasks."dev:nodocker"]
+description = "API + frontend contra un PostgreSQL instalado en el equipo (sin Docker)"
+depends = ["api:nodocker", "web"]

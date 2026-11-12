@@ -1,156 +1,181 @@
 # Netplus
 
-Entorno inicial para una aplicación que recibe archivos Excel y genera
-dashboards. La primera iteración incluye una API mínima en Go, un frontend
-React + TypeScript, PostgreSQL y Redis. Tailwind, autenticación e importación
-Excelize se incorporarán en las siguientes iteraciones.
+Aplicación que recibe archivos Excel y genera dashboards. API en Go, frontend
+React + TypeScript (Vite), PostgreSQL y Redis.
 
-Todo el runtime de desarrollo se ejecuta en Docker. En la computadora solo se
-necesita Docker Desktop; el código se edita en la carpeta clonada y se monta
-como volumen dentro de los contenedores. Así, Go, Node, TypeScript, PostgreSQL
-y Redis usan las mismas versiones para todo el equipo.
+## Cómo se desarrolla
 
-## Requisitos
+- **Go y Node corren directamente en tu computadora**, con las versiones fijadas
+  en [mise.toml](mise.toml) (Go 1.24, Node 22) para que todo el equipo use las
+  mismas.
+- **PostgreSQL y Redis** corren en Docker solo mientras trabajas (opción A), o
+  se instala PostgreSQL de forma nativa si no puedes usar Docker (opción B).
+  Nada queda corriendo ni ocupando puertos cuando terminas.
 
-- Docker Desktop con Docker Compose v2.
-- Puerto libre `5173` para desarrollo local.
+| Qué | Dónde | Puerto |
+|---|---|---|
+| Frontend (Vite) | host | 5173 |
+| API (Go + Air) | host | 8080 (el frontend la proxifica en `/api`) |
+| PostgreSQL | Docker (A) o nativo (B) | 5432 |
+| Redis | Docker (A) | 6379 (el código aún no lo usa) |
 
-No es necesario instalar Go, Node, npm, TypeScript, PostgreSQL ni Redis en el
-host.
+## 1. Preparación (ambas opciones, una sola vez)
 
-## Arrancar en una computadora
+1. Instalar [Git](https://git-scm.com/) y [mise](https://mise.jdx.dev):
+
+   ```powershell
+   winget install Git.Git
+   winget install jdx.mise
+   ```
+
+2. Activar mise en PowerShell, para que `go` y `node` queden en el PATH, y
+   **reabrir la terminal**:
+
+   ```powershell
+   Add-Content $PROFILE 'mise activate pwsh | Out-String | Invoke-Expression'
+   ```
+
+3. Clonar e instalar las herramientas y dependencias:
+
+   ```powershell
+   git clone https://github.com/michael-lxndr/<repositorio>.git
+   cd <repositorio>
+   Copy-Item .env.example .env
+   mise trust
+   mise install      # Go 1.24 y Node 22
+   mise run setup    # go mod download + npm install
+   ```
+
+Comprueba las versiones: `mise exec -- go version` debe decir `go1.24.x` y
+`mise exec -- node --version`, `v22.x`.
+
+## 2A. Levantar CON Docker
+
+Requisito extra: Docker Desktop abierto y en verde.
 
 ```powershell
-Copy-Item .env.example .env
-docker compose up --build
+mise run dev
 ```
 
-y luego dentro de vs code `ctrl+shift+p` → "Dev Containers: Rebuild and Reopen in Container"
+Esto ejecuta `docker compose up -d --wait postgres redis` (espera a que estén
+sanos), arranca la API con recarga automática y el frontend. Abre
+<http://localhost:5173>.
 
-- Frontend: <http://localhost:5173>
-- API interna: <http://localhost:5173/api/health>
-
-En este modo los puertos se publican en `127.0.0.1`; ningún otro equipo de la
-
-El primer `--build` crea las imágenes de Go y Node. Las siguientes veces basta
-con `docker compose up`, salvo que cambien `Dockerfile`, `go.mod` o
-`package.json`.
-
-Comandos útiles:
+Al terminar, `Ctrl+C` y libera los puertos:
 
 ```powershell
-docker compose ps
-docker compose logs -f api
-docker compose exec api go version
-docker compose exec frontend node --version
-docker compose down
+mise run db:stop     # detiene los contenedores; los datos se conservan
 ```
 
-Para que VS Code reconozca Go, React y TypeScript sin instalar nada en el host,
-instala la extensión **Dev Containers** y usa
-`Dev Containers: Reopen in Container`. Hay dos configuraciones, que reutilizan
-el mismo Compose:
+## 2B. Levantar SIN Docker
 
-- [.devcontainer/frontend](.devcontainer/frontend): Node, React y TypeScript.
-- [.devcontainer/api](.devcontainer/api): Go (con hot reload mediante Air).
+1. Instalar PostgreSQL 17 nativo:
 
-Se abre una ventana de VS Code por cada una.
+   ```powershell
+   winget install PostgreSQL.PostgreSQL.17
+   ```
 
-### Flujo diario con VS Code
+   Anota la contraseña del usuario `postgres` que elijas en el instalador.
 
-1. Abrir Docker Desktop y esperar a que esté en verde.
-2. En la carpeta del proyecto: `docker compose up -d --build`. Es obligatorio
-   hacerlo antes de abrir los dev containers: ellos no construyen las imágenes,
-   solo las usan. Con la caché es rápido.
-3. Abrir el proyecto en VS Code y ejecutar
-   `Dev Containers: Reopen in Container` → **Netplus - Frontend (Node)**.
-4. Abrir **otra ventana** de VS Code (`File → New Window`), abrir la misma
-   carpeta y ejecutar `Dev Containers: Reopen in Container` →
-   **Netplus - API (Go)**.
+2. Crear el usuario y la base de datos que indica `.env` (te pedirá esa
+   contraseña; `psql` está en `C:\Program Files\PostgreSQL\17\bin`):
 
-Cada ventana debe quedarse en su propio contenedor; no cambiar de uno a otro
-dentro de la misma ventana.
+   ```powershell
+   & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -c "CREATE USER netplus WITH PASSWORD 'netplus_dev';"
+   & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -c "CREATE DATABASE netplus OWNER netplus;"
+   ```
+
+3. Arrancar API y frontend (sin tocar Docker):
+
+   ```powershell
+   mise run dev:nodocker
+   ```
+
+Redis no hace falta todavía: el código no lo usa. Si ya tienes Postgres en el
+puerto 5432 con otras credenciales, cambia `DATABASE_URL` en `.env`.
+
+## 3. Verificar que todo funciona
+
+Con `mise run dev` (o `dev:nodocker`) corriendo, en **otra terminal**:
+
+```powershell
+mise run check
+```
+
+Debe terminar en `Todo en orden.` con cuatro líneas `OK`:
+
+```
+OK    API responde (http://localhost:8080/api/health)
+OK    Frontend responde (http://localhost:5173)
+OK    Proxy del frontend llega a la API (/api/health en :5173)
+OK    API conecta con PostgreSQL (/api/setup/status)
+```
+
+Comprobación visual: abre <http://localhost:5173>; debe verse la pantalla de
+inicio de sesión (o de configuración inicial si la base de datos está vacía).
+
+Comprobaciones adicionales opcionales:
+
+```powershell
+cd backend;  mise exec -- go vet ./...          # análisis estático de Go
+cd frontend; mise exec -- npx tsc --noEmit      # tipos de TypeScript
+docker compose ps                               # (A) postgres y redis "healthy"
+```
+
+Para comprobar que la recarga automática funciona, guarda cualquier cambio en un
+`.go` y mira en la terminal cómo Air vuelve a compilar y reinicia la API.
 
 ### Si algo falla
 
-| Síntoma | Solución |
+| Síntoma | Causa y solución |
 |---|---|
-| Error "An error occurred setting up the container" | Comprobar que Docker Desktop esté en verde, ejecutar `docker compose up -d --build` y pulsar **Retry**. |
-| Error "pull access denied for netplus/..." | Faltan las imágenes locales: ejecutar `docker compose up -d --build`. |
-| Menú "Pick an action to help resolve the problem" | Pulsar **Reload Window**. Si sigue igual: `docker compose ps` y, si falta algún servicio, `docker compose up -d`. |
-| Sigue sin abrir | `docker compose down` y luego `docker compose up -d --build`. No se pierden datos (los volúmenes se conservan; no usar `-v`). |
-| Ver el error real | Pestaña **Output** → desplegable **Dev Containers**. |
+| `mise: command not found` / `go` o `node` no se encuentran | No se activó mise. Repite el paso 1.2 y **reabre la terminal**. |
+| `mise ERROR ... is not trusted` | Ejecuta `mise trust` en la carpeta del proyecto. |
+| `check`: las 4 líneas dan `ECONNREFUSED` | `dev` no está corriendo. Lánzalo en otra terminal y espera a ver `Netplus API escuchando en :8080`. |
+| `check`: solo falla "conecta con PostgreSQL" | La base no está accesible o `DATABASE_URL` en `.env` no coincide con tus credenciales. (A) `docker compose ps`; (B) comprueba que el servicio PostgreSQL de Windows esté iniciado. |
+| `DATABASE_URL es obligatoria` | Falta `.env`: `Copy-Item .env.example .env`. |
+| `password authentication failed` con Docker | El volumen se creó con otra contraseña. Iguala `POSTGRES_PASSWORD` y `DATABASE_URL` en `.env` a la original, o reinicia los datos con `docker compose down -v` (**borra la base**). |
+| `port is already allocated` o `address already in use` en 5432 / 6379 / 5173 / 8080 | Otro programa usa el puerto. Cambia `DB_PORT` o `REDIS_PORT` en `.env` (y `DATABASE_URL`), o cierra el otro programa. |
+| `docker: error during connect` | Docker Desktop no está abierto. Ábrelo y espera a que esté en verde. |
+| El frontend carga pero el login da error de red | La API no está arriba; mira la terminal de `dev` o ejecuta `mise run check`. |
+| `Netplus Project is not recognized` al arrancar la API | Air necesita el binario `.exe`; ya está configurado en `backend/.air.toml`. Si lo cambias, mantén `main.exe`. |
 
-## Arrancar como servidor para varios equipos
+## Variables de entorno
 
-Copiar `.env.example` a `.env.server` y cambiar:
+`.env` (no se sube a Git) lo leen `docker compose` y mise. El ejemplo está en
+[.env.example](.env.example). Si cambias el usuario, la contraseña o el puerto de
+Postgres, actualiza también `DATABASE_URL`. Las migraciones SQL se aplican solas
+al arrancar la API.
 
-```dotenv
-APP_MODE=server
-WEB_BIND_IP=0.0.0.0
-VITE_API_URL=/api
-```
+## Tareas disponibles
 
-Luego ejecutar:
+`mise tasks` las lista todas:
 
-```powershell
-docker compose --env-file .env.server up --build -d
-```
+| Tarea | Qué hace |
+|---|---|
+| `mise run setup` | Instala dependencias de Go y de Node. |
+| `mise run dev` | Docker (Postgres + Redis) + API + frontend. |
+| `mise run dev:nodocker` | API + frontend, sin Docker. |
+| `mise run check` | Verifica API, frontend, proxy y base de datos. |
+| `mise run db` / `db:stop` | Levanta / detiene Postgres y Redis en Docker. |
+| `mise run api` / `web` | Solo la API (con `db`) o solo el frontend. |
 
-Abrir únicamente `WEB_PORT` en el firewall del servidor y acceder desde los
-clientes con `http://IP_DEL_SERVIDOR:5173`. La API Go se comunica mediante el
-proxy interno de Vite; PostgreSQL y Redis tampoco se exponen a la red. En una
-etapa posterior se puede reemplazar Vite por un proxy HTTPS de producción,
-manteniendo un solo puerto público.
+VS Code detecta Go y TypeScript directamente; instala las extensiones **Go** y
+**ESLint/TypeScript**. No hace falta ningún dev container.
 
-Para una instalación real, publicar la aplicación detrás de HTTPS y cambiar
-`POSTGRES_PASSWORD` por un secreto fuerte. Los valores del archivo `.env` no
-deben subirse al repositorio.
-
-## Subir el proyecto a GitHub
-
-El repositorio debe contener los fuentes, Dockerfiles, Compose y archivos de
-configuración de ejemplo. No debe contener `.env`, `data/`, `node_modules/`,
-`dist/` ni volúmenes de Docker.
-
-Desde la carpeta del proyecto:
-
-```powershell
-git init
-git add .
-git commit -m "Create Docker development environment"
-git branch -M main
-git remote add origin https://github.com/USUARIO/REPOSITORIO.git
-git push -u origin main
-```
-
-Después, otra persona puede comenzar así:
-
-```powershell
-git clone https://github.com/USUARIO/REPOSITORIO.git
-Set-Location REPOSITORIO
-Copy-Item .env.example .env
-docker compose up --build
-```
-
-GitHub guarda el código y la configuración; las bases de datos y los archivos
-subidos por usuarios permanecen en los volúmenes y en `data/` de cada
-instalación, no en Git.
-
-## Cambiar entre local y servidor
-
-No se cambia el código de la aplicación. Se cambia el archivo de entorno:
-
-- Local: bind `127.0.0.1`, una sola computadora.
-- Servidor: bind web en `0.0.0.0`, servidor con IP fija o reserva DHCP.
-
-La migración de datos se hace respaldando y restaurando PostgreSQL:
+## Respaldo de la base de datos (con Docker)
 
 ```powershell
 docker compose exec postgres pg_dump -U netplus -d netplus > backup.sql
 docker compose exec -T postgres psql -U netplus -d netplus < backup.sql
 ```
 
-El cambio de red no crea usuarios automáticamente. La futura autenticación
-deberá usar la misma base de datos, con roles `admin` y `viewer`, tanto en local
-como en servidor.
+## Despliegue como servidor
+
+Pendiente. El despliegue (binario Go + frontend compilado detrás de HTTPS) se
+definirá en una iteración posterior.
+
+## Contribuir
+
+Una rama por cambio (`feature/...`), push y Pull Request a `main`. No subir
+`.env`, `data/`, `node_modules/` ni `dist/`.

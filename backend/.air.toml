@@ -2,14 +2,11 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -o ./tmp/main ./cmd/api"
-  bin = "./tmp/main"
+  cmd = "go build -o ./tmp/main.exe ./cmd/api"
+  bin = "./tmp/main.exe"
   include_ext = ["go"]
   exclude_dir = ["tmp", "data"]
   delay = 300
-  # Los bind mounts de Docker en Windows no siempre avisan de cambios de archivos.
-  poll = true
-  poll_interval = 500
 
 [log]
   time = false
