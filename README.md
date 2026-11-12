@@ -1,7 +1,10 @@
 # Netplus
 
-Aplicación que recibe archivos Excel y genera dashboards. API en Go, frontend
-React + TypeScript (Vite), PostgreSQL y Redis.
+Control de asistencia: recibe reportes Excel (marcaciones, permisos y horas),
+muestra dashboards e indicadores y genera reportes para preparar la nómina. API
+en Go, frontend React + TypeScript (Vite), PostgreSQL y Redis. Cada carpeta tiene
+su propio detalle: [frontend/README.md](frontend/README.md) (pantallas, formatos
+de Excel, indicadores) y [docs/](docs/) (análisis y diseño).
 
 ## Cómo se desarrolla
 
@@ -15,7 +18,7 @@ React + TypeScript (Vite), PostgreSQL y Redis.
 | Qué | Dónde | Puerto |
 |---|---|---|
 | Frontend (Vite) | host | 5173 |
-| API (Go + Air) | host | 8080 (el frontend la proxifica en `/api`) |
+| API (Go + Air) | host | 8080 (el frontend la proxifica en `/api`; lee y valida los Excel) |
 | PostgreSQL | Docker (A) o nativo (B) | 5432 |
 | Redis | Docker (A) | 6379 (el código aún no lo usa) |
 
@@ -108,15 +111,25 @@ Debe terminar en `Todo en orden.` con cuatro líneas `OK`:
 OK    API responde (http://localhost:8080/api/health)
 OK    Frontend responde (http://localhost:5173)
 OK    Proxy del frontend llega a la API (/api/health en :5173)
-OK    API conecta con PostgreSQL (/api/setup/status)
+OK    API conecta con PostgreSQL (database en /api/health)
 ```
 
 Comprobación visual: abre <http://localhost:5173>; debe verse la pantalla de
-inicio de sesión (o de configuración inicial si la base de datos está vacía).
+inicio de sesión con "Servidor local disponible". En una base nueva la API crea
+estas cuentas y datos de demostración (ver "Cuentas iniciales"):
+
+| Rol | Correo | Contraseña |
+|---|---|---|
+| Administrador | `admin@nettplus.local` | `NettplusDemo2026!` |
+| Consulta (viewer) | `viewer@nettplus.local` | `ConsultaDemo2026!` |
+
+También puedes entrar a la **demo del navegador** (sin servidor, datos en
+IndexedDB) desde la misma pantalla.
 
 Comprobaciones adicionales opcionales:
 
 ```powershell
+mise run test                                   # pruebas de Go y del frontend
 cd backend;  mise exec -- go vet ./...          # análisis estático de Go
 cd frontend; mise exec -- npx tsc --noEmit      # tipos de TypeScript
 docker compose ps                               # (A) postgres y redis "healthy"
@@ -147,6 +160,35 @@ Para comprobar que la recarga automática funciona, guarda cualquier cambio en u
 Postgres, actualiza también `DATABASE_URL`. Las migraciones SQL se aplican solas
 al arrancar la API.
 
+### Cuentas iniciales
+
+Al arrancar con la tabla de usuarios vacía, la API crea un administrador y un
+viewer con las credenciales de la tabla de arriba (o las de `ADMIN_EMAIL`,
+`ADMIN_PASSWORD`, `VIEWER_EMAIL` y `VIEWER_PASSWORD` de `.env`). Son
+credenciales públicas del prototipo: antes de usar información laboral real
+define las tuyas en `.env` **antes del primer arranque**, o cámbialas desde
+**Usuarios y permisos**. Con `SEED_DEMO=false` la base nueva arranca sin
+personas ni marcaciones ficticias.
+
+> Actualizando desde la versión anterior (login por usuario, sin datos de
+> asistencia): la migración `002_attendance.sql` reemplaza las tablas de acceso,
+> así que la cuenta creada en la pantalla de configuración inicial deja de
+> existir y se recrean las cuentas iniciales.
+
+### Pruebas de integración de la API
+
+Necesitan una base PostgreSQL **vacía y desechable** (la prueba borra su
+esquema). Con Docker levantado:
+
+```powershell
+docker compose exec -T postgres psql -U netplus -d postgres -c "CREATE DATABASE netplus_test;"
+$env:TEST_DATABASE_URL = "postgres://netplus:<contraseña>@localhost:5432/netplus_test?sslmode=disable"
+mise run test:api
+```
+
+Sin `TEST_DATABASE_URL` esas pruebas se omiten y solo corren las del lector de
+Excel.
+
 ## Tareas disponibles
 
 `mise tasks` las lista todas:
@@ -157,6 +199,7 @@ al arrancar la API.
 | `mise run dev` | Docker (Postgres + Redis) + API + frontend. |
 | `mise run dev:nodocker` | API + frontend, sin Docker. |
 | `mise run check` | Verifica API, frontend, proxy y base de datos. |
+| `mise run test` | Pruebas de Go (`test:api`) y del frontend (`test:web`). |
 | `mise run db` / `db:stop` | Levanta / detiene Postgres y Redis en Docker. |
 | `mise run api` / `web` | Solo la API (con `db`) o solo el frontend. |
 
@@ -173,7 +216,9 @@ docker compose exec -T postgres psql -U netplus -d netplus < backup.sql
 ## Despliegue como servidor
 
 Pendiente. El despliegue (binario Go + frontend compilado detrás de HTTPS) se
-definirá en una iteración posterior.
+definirá en una iteración posterior. Vercel (`frontend/vercel.json`) sirve solo
+la interfaz y la **demo del navegador**: la API en Go y PostgreSQL no se
+publican allí.
 
 ## Contribuir
 

@@ -18,9 +18,9 @@ const checks = [
     ok: (r, b) => r.ok && b.status === "ok",
   },
   {
-    name: "API conecta con PostgreSQL (/api/setup/status)",
-    url: "http://localhost:5173/api/setup/status",
-    ok: (r, b) => r.ok && typeof b.setupRequired === "boolean",
+    name: "API conecta con PostgreSQL (database en /api/health)",
+    url: "http://localhost:8080/api/health",
+    ok: (r, b) => r.ok && b.database === "ok",
   },
 ];
 

@@ -10,7 +10,7 @@ negocio y la misma interfaz web.
 | `admin` | Iniciar sesión, cargar Excel, seleccionar hojas, validar/importar datos, administrar dashboards y consultar todos los reportes. |
 | `viewer` | Iniciar sesión y consultar dashboards y reportes publicados. No puede cargar archivos ni modificar la configuración. |
 
-El primer usuario administrador se crea durante la instalación. El administrador
+Al primer arranque la API crea un administrador y un viewer iniciales (ver README). El administrador
 puede crear usuarios `viewer` y cambiar sus contraseñas o desactivarlos.
 
 ## Versión local
