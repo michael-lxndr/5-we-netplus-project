@@ -23,13 +23,15 @@ Normalmente se usa `mise run dev` desde la raíz, que arranca también la API.
 
 ## Inicio de sesión
 
-La pantalla de acceso distingue dos modalidades:
+El acceso requiere correo y contraseña validados por la API en Go. La sesión
+se guarda en una cookie HttpOnly/SameSite de 8 horas; los permisos y los datos
+se validan en el servidor y se conservan en PostgreSQL. No se ofrecen cuentas
+de prueba en pantalla ni acceso por demo. Los marcadores antiguos del navegador
+se descartan; la sesión solo se restaura mediante `/api/session`.
 
-- **Servidor:** correo y contraseña contra la API. Sesión de 8 horas en cookie
-  HttpOnly/SameSite, permisos validados en la API y datos en PostgreSQL.
-- **Demo administrador / demo consulta:** entrada explícita al prototipo con
-  IndexedDB. No usa autenticación de servidor y sus datos son independientes de
-  PostgreSQL. Si la API no está disponible, es la única opción.
+Si la API o su base no están disponibles, el formulario muestra el estado y
+bloquea el envío. **Comprobar conexión** permite reintentar. Las credenciales
+incorrectas no habilitan ningún modo alternativo.
 
 Las cuentas iniciales del servidor están en el README principal. El
 administrador crea y edita usuarios, asigna roles, desactiva cuentas y cambia
@@ -110,15 +112,16 @@ fechas civiles; la auditoría se muestra en `America/Guayaquil`.
 - `src/services/`: importadores, exportación a Excel/PDF y cliente de la API.
 - `src/pages/`, `src/components/`, `src/context/`: pantallas y estado.
 - La validación de Excel existe dos veces con el mismo comportamiento: aquí
-  (`src/services/excel.ts`, `sourceDocuments.ts`, para la vista previa y la demo
-  del navegador) y en la API (`backend/internal/excel`), que es la que decide al
-  guardar. Si cambias una regla, cámbiala en ambos lados.
+  (`src/services/excel.ts`, `sourceDocuments.ts`, para la vista previa) y en la
+  API (`backend/internal/excel`), que es la que decide al guardar. Si cambias
+  una regla, cámbiala en ambos lados.
 - El contrato JSON con la API está en `src/domain/types.ts` y
   `backend/internal/domain/types.go`.
 
 ## Vercel
 
-Vercel sirve la interfaz y la **demo del navegador** (framework Vite, raíz
-`frontend/`, `npm run build`, salida `dist`; `vercel.json` incluye el fallback de
-React Router). Al no detectar la API, el acceso entra a la demo y las
-importaciones y exportaciones funcionan en el navegador.
+Vercel sirve la interfaz (framework Vite, raíz `frontend/`, `npm run build`,
+salida `dist`; `vercel.json` incluye el fallback de React Router). El acceso
+requiere que `/api` llegue a la API Go con PostgreSQL; sin ese servicio no hay
+inicio de sesión. Las credenciales de `.env` son exclusivas del servidor y no
+deben copiarse a variables `VITE_` ni al bundle del navegador.

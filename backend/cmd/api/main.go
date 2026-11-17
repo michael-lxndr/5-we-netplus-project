@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
+	"net/mail"
 	"os"
 	"strconv"
 	"strings"
@@ -40,25 +42,37 @@ func envList(key string) []string {
 	return list
 }
 
-// seedAccounts devuelve las cuentas iniciales. Sus contraseñas por defecto son públicas
-// (prototipo): en un servidor real deben definirse en .env antes del primer arranque.
-func seedAccounts() []store.NewAccount {
-	adminPassword := env("ADMIN_PASSWORD", "NettplusDemo2026!")
-	viewerPassword := env("VIEWER_PASSWORD", "ConsultaDemo2026!")
-	if len([]rune(adminPassword)) < auth.MinPasswordLength || len([]rune(viewerPassword)) < auth.MinPasswordLength {
-		log.Fatalf("Las contraseñas iniciales deben tener al menos %d caracteres.", auth.MinPasswordLength)
-	}
-	build := func(id, name, email, role, password string) store.NewAccount {
+// seedAccounts exige configuración explícita al crear una base nueva.
+// Las cuentas existentes se administran en PostgreSQL; no se sobrescriben con .env.
+func seedAccounts() ([]store.NewAccount, error) {
+	build := func(id, name, prefix, role string) (store.NewAccount, error) {
+		email := strings.ToLower(strings.TrimSpace(os.Getenv(prefix + "_EMAIL")))
+		password := os.Getenv(prefix + "_PASSWORD")
+		address, err := mail.ParseAddress(email)
+		if err != nil || address.Address != email || len(email) > 120 {
+			return store.NewAccount{}, fmt.Errorf("define %s_EMAIL en .env con un correo válido", prefix)
+		}
+		if len([]rune(password)) < auth.MinPasswordLength || len(password) > 128 {
+			return store.NewAccount{}, fmt.Errorf("define %s_PASSWORD en .env: mínimo %d caracteres y máximo 128 bytes", prefix, auth.MinPasswordLength)
+		}
 		hash, err := auth.Hash(password)
 		if err != nil {
-			log.Fatal(err)
+			return store.NewAccount{}, err
 		}
-		return store.NewAccount{ID: id, Name: name, Email: strings.ToLower(email), Role: role, PasswordHash: hash, Active: true}
+		return store.NewAccount{ID: id, Name: name, Email: email, Role: role, PasswordHash: hash, Active: true}, nil
 	}
-	return []store.NewAccount{
-		build("admin-local", "Administración Nettplus", env("ADMIN_EMAIL", "admin@nettplus.local"), domain.RoleAdmin, adminPassword),
-		build("viewer-local", "Consulta de asistencia", env("VIEWER_EMAIL", "viewer@nettplus.local"), domain.RoleViewer, viewerPassword),
+	admin, err := build("admin-local", "Administración Nettplus", "ADMIN", domain.RoleAdmin)
+	if err != nil {
+		return nil, err
 	}
+	viewer, err := build("viewer-local", "Consulta de asistencia", "VIEWER", domain.RoleViewer)
+	if err != nil {
+		return nil, err
+	}
+	if admin.Email == viewer.Email {
+		return nil, fmt.Errorf("ADMIN_EMAIL y VIEWER_EMAIL deben ser diferentes")
+	}
+	return []store.NewAccount{admin, viewer}, nil
 }
 
 func main() {
@@ -78,11 +92,21 @@ func main() {
 	}
 
 	st := store.New(pool)
-	if err := st.Init(ctx, env("SEED_DEMO", "true") != "false"); err != nil {
+	if err := st.Init(ctx, env("SEED_DEMO", "false") == "true"); err != nil {
 		log.Fatalf("estado inicial: %v", err)
 	}
-	if err := st.SeedUsers(ctx, seedAccounts()); err != nil {
-		log.Fatalf("cuentas iniciales: %v", err)
+	accounts, err := st.Users(ctx)
+	if err != nil {
+		log.Fatalf("consultar cuentas: %v", err)
+	}
+	if len(accounts) == 0 {
+		initial, err := seedAccounts()
+		if err != nil {
+			log.Fatalf("cuentas iniciales: %v", err)
+		}
+		if err := st.SeedUsers(ctx, initial); err != nil {
+			log.Fatalf("cuentas iniciales: %v", err)
+		}
 	}
 
 	mode := env("APP_MODE", "local")

@@ -62,7 +62,7 @@ function AdminOnly({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
-  const { user, data, selectUser, saving, mode, logout } = useApp();
+  const { user, saving, logout } = useApp();
   const [mobileMenu, setMobileMenu] = useState(false);
   const path = useLocation().pathname;
   const title =
@@ -136,11 +136,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="demo-local">
             <Database size={14} />
-            <span>
-              {mode === "local"
-                ? "Servidor local conectado"
-                : "Espacio de demostración"}
-            </span>
+            <span>Servidor conectado</span>
             <i />
           </div>
           <div className="sidebar-user">
@@ -154,25 +150,6 @@ export default function App() {
               </small>
             </div>
           </div>
-          {mode === "demo" && (
-            <label className="session-label">
-              Probar sesión demo
-              <select
-                aria-label="Probar sesión demo"
-                value={user.id}
-                onChange={(e) => selectUser(e.target.value)}
-                disabled={saving}
-              >
-                {data.users
-                  .filter((u) => u.active)
-                  .map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} · {u.role === "admin" ? "Admin" : "Viewer"}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          )}
           <button
             className="logout-button"
             disabled={saving}
@@ -200,15 +177,9 @@ export default function App() {
           <div className="topbar-right">
             <span className="save-status">
               <Check size={13} />
-              {saving
-                ? "Guardando…"
-                : mode === "local"
-                  ? "Guardado en el servidor local"
-                  : "Guardado en este navegador"}
+              {saving ? "Guardando…" : "Guardado en el servidor"}
             </span>
-            <Badge tone={mode === "local" ? "green" : "blue"}>
-              {mode === "local" ? "LOCAL" : "DEMO"}
-            </Badge>
+            <Badge tone="green">SESIÓN ACTIVA</Badge>
             <span className="avatar header-avatar" title={user.name}>
               {initials(user.name)}
             </span>
