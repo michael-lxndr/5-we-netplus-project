@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import Login from "../src/pages/Login";
+import { api, serverAvailable } from "../src/services/api";
 import {
   analyze,
   assertAdmin,
@@ -275,5 +279,83 @@ describe("Indicadores y reportes", () => {
     expect(text).toContain("NETTPLUS");
     expect(text).toContain("Finanzas");
     expect(pdf.length).toBeGreaterThan(3000);
+  });
+});
+
+describe("Acceso autenticado", () => {
+  const props = {
+    available: true,
+    onLogin: async () => {},
+    onCheck: async () => {},
+  };
+  it("ofrece únicamente acceso con credenciales, sin accesos ni contraseñas de prueba", () => {
+    const html = renderToStaticMarkup(createElement(Login, props));
+    expect(html).toMatch(/autocomplete="username"/i);
+    expect(html).toMatch(/autocomplete="current-password"/i);
+    expect(html).toContain('type="email"');
+    expect(html).toContain('type="password"');
+    expect(html).not.toMatch(
+      /Demo administrador|Demo consulta|Accesos iniciales de prueba|NettplusDemo2026|ConsultaDemo2026/,
+    );
+    expect(html).not.toMatch(/<button[^>]*class="login-submit"[^>]*disabled/);
+  });
+  it("bloquea el envío cuando no hay servidor y permite comprobar la conexión", () => {
+    const html = renderToStaticMarkup(
+      createElement(Login, { ...props, available: false }),
+    );
+    expect(html).toMatch(/<button[^>]*class="login-submit"[^>]*disabled/);
+    expect(html).toContain("Servicio no disponible");
+    expect(html).toContain("Comprobar conexión");
+  });
+  it("solo considera disponible una API conectada a PostgreSQL", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      for (const [body, expected] of [
+        [{ service: "nettplus-api", database: "ok" }, true],
+        [{ service: "nettplus-api", database: "down" }, false],
+        [{ service: "otro", database: "ok" }, false],
+      ] as const) {
+        fetchMock.mockResolvedValueOnce(
+          new Response(JSON.stringify(body), {
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+        expect(await serverAvailable()).toBe(expected);
+      }
+      fetchMock.mockResolvedValueOnce(new Response("<html>Vercel</html>"));
+      expect(await serverAvailable()).toBe(false);
+      fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      expect(await serverAvailable()).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("no convierte errores de red o credenciales rechazadas en una sesión", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      await expect(api("/auth/login", "POST", {})).rejects.toMatchObject({
+        status: 503,
+      });
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: "El correo o la contraseña no son correctos.",
+          }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+      await expect(api("/auth/login", "POST", {})).rejects.toMatchObject({
+        status: 401,
+      });
+      expect(fetchMock.mock.calls[1][1]).toMatchObject({
+        credentials: "same-origin",
+        method: "POST",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

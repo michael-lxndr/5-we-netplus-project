@@ -44,6 +44,7 @@ de Excel, indicadores) y [docs/](docs/) (análisis y diseño).
    git clone https://github.com/michael-lxndr/<repositorio>.git
    cd <repositorio>
    Copy-Item .env.example .env
+   # Completa ADMIN_PASSWORD y VIEWER_PASSWORD en .env antes del primer arranque.
    mise trust
    mise install      # Go 1.24 y Node 22
    mise run setup    # go mod download + npm install
@@ -114,17 +115,12 @@ OK    Proxy del frontend llega a la API (/api/health en :5173)
 OK    API conecta con PostgreSQL (database en /api/health)
 ```
 
-Comprobación visual: abre <http://localhost:5173>; debe verse la pantalla de
-inicio de sesión con "Servidor local disponible". En una base nueva la API crea
-estas cuentas y datos de demostración (ver "Cuentas iniciales"):
-
-| Rol | Correo | Contraseña |
-|---|---|---|
-| Administrador | `admin@nettplus.local` | `NettplusDemo2026!` |
-| Consulta (viewer) | `viewer@nettplus.local` | `ConsultaDemo2026!` |
-
-También puedes entrar a la **demo del navegador** (sin servidor, datos en
-IndexedDB) desde la misma pantalla.
+Comprobación visual: abre <http://localhost:5173>; debe verse el acceso de
+Nettplus y "Conexión disponible". Inicia sesión con la cuenta configurada en
+`.env` al crear la base (ver "Cuentas iniciales"). No hay acceso sin contraseña,
+selector de usuarios demo ni recuperación de sesiones desde IndexedDB. Si la
+API o PostgreSQL no están disponibles, el acceso permanece bloqueado y se puede
+comprobar la conexión de nuevo.
 
 Comprobaciones adicionales opcionales:
 
@@ -162,13 +158,19 @@ al arrancar la API.
 
 ### Cuentas iniciales
 
-Al arrancar con la tabla de usuarios vacía, la API crea un administrador y un
-viewer con las credenciales de la tabla de arriba (o las de `ADMIN_EMAIL`,
-`ADMIN_PASSWORD`, `VIEWER_EMAIL` y `VIEWER_PASSWORD` de `.env`). Son
-credenciales públicas del prototipo: antes de usar información laboral real
-define las tuyas en `.env` **antes del primer arranque**, o cámbialas desde
-**Usuarios y permisos**. Con `SEED_DEMO=false` la base nueva arranca sin
-personas ni marcaciones ficticias.
+Al arrancar con la tabla de usuarios vacía, la API exige `ADMIN_EMAIL`,
+`ADMIN_PASSWORD`, `VIEWER_EMAIL` y `VIEWER_PASSWORD` en `.env`. Los correos deben
+ser válidos y diferentes; las contraseñas requieren al menos 10 caracteres y
+hasta 128 bytes. No se crean cuentas con contraseñas de respaldo. Las claves
+no se envían al frontend y se guardan como hashes Argon2id en PostgreSQL.
+
+Si ya existen usuarios, se conservan sus credenciales. Cambiar `.env` no cambia
+esas cuentas: utiliza **Usuarios y permisos** para administrarlas. Una instalación
+anterior conserva sus cuentas iniciales hasta que las actualices allí.
+
+La base nueva arranca sin personas ni marcaciones ficticias. `SEED_DEMO=true`
+las carga explícitamente para pruebas; esta opción no omite la autenticación.
+Los datos existentes no se borran al cambiar esta configuración.
 
 > Actualizando desde la versión anterior (login por usuario, sin datos de
 > asistencia): la migración `002_attendance.sql` reemplaza las tablas de acceso,
@@ -216,9 +218,10 @@ docker compose exec -T postgres psql -U netplus -d netplus < backup.sql
 ## Despliegue como servidor
 
 Pendiente. El despliegue (binario Go + frontend compilado detrás de HTTPS) se
-definirá en una iteración posterior. Vercel (`frontend/vercel.json`) sirve solo
-la interfaz y la **demo del navegador**: la API en Go y PostgreSQL no se
-publican allí.
+definirá en una iteración posterior. Vercel (`frontend/vercel.json`) sirve
+solo la interfaz: la API en Go y PostgreSQL no se publican allí. Para iniciar
+sesión, el despliegue debe conectar `/api` con el servidor. Un frontend sin API
+muestra el acceso desconectado y no permite entrar mediante una demo.
 
 ## Contribuir
 

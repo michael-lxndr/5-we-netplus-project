@@ -1,264 +1,276 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import {
   ArrowRight,
   Check,
+  ChevronRight,
   Eye,
   EyeOff,
   FileSpreadsheet,
+  Fingerprint,
   LockKeyhole,
+  Mail,
+  RefreshCw,
   ShieldCheck,
-  Signal,
   UsersRound,
 } from "lucide-react";
-import type { Role } from "../domain/types";
 
 export default function Login({
   available,
   onLogin,
-  onDemo,
   onCheck,
 }: {
   available: boolean;
   onLogin: (email: string, password: string) => Promise<void>;
-  onDemo: (role: Role) => Promise<void>;
   onCheck: () => Promise<void>;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
+  const [busy, setBusy] = useState<"login" | "connection" | null>(null);
   const [error, setError] = useState("");
-  async function run(action: () => Promise<void>) {
-    setBusy(true);
+
+  async function run(
+    kind: "login" | "connection",
+    action: () => Promise<void>,
+  ) {
+    if (busy) return;
+    setBusy(kind);
     setError("");
     try {
       await action();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo iniciar sesión.");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
+
   return (
     <div className="login-page">
-      <section className="login-story">
-        <a href="/" className="login-logo">
-          <img src="/nettplus-logo.png" alt="Nettplus · The Power of Fiber" />
+      <div className="login-ambient" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </div>
+      <header className="login-header">
+        <a href="/" className="login-logo" aria-label="Nettplus, inicio">
+          <img
+            src="/nettplus-logo.png"
+            alt="Nettplus · The Power of Fiber"
+            width="220"
+            height="75"
+          />
         </a>
-        <div className="login-story-content">
-          <span className="eyebrow">
-            <i />
-            GESTIÓN DE ASISTENCIA
+        <span className="login-header-label">
+          <span /> Portal del equipo
+        </span>
+      </header>
+
+      <main className="login-layout" id="main-content">
+        <section className="login-story" aria-labelledby="login-story-title">
+          <span className="login-eyebrow">
+            <span /> PERSONAS. CONEXIONES. POSIBILIDADES.
           </span>
-          <h1>
-            Tu equipo.
+          <h1 id="login-story-title">
+            Todo tu equipo.
             <br />
-            Cada día.
-            <br />
-            <span>Todo conectado.</span>
+            <span>En sintonía.</span>
           </h1>
-          <p>
-            De las marcaciones a una visión clara.
-            <br />
-            Menos archivos dispersos, más tiempo para tu gente.
+          <p className="login-description">
+            Cada jornada cuenta. Conecta la asistencia, las novedades y los
+            reportes en un solo lugar.
           </p>
-          <div className="login-illustration" aria-hidden="true">
-            <div className="illustration-top">
-              <span>
-                <i />
-                ASISTENCIA EN ORDEN
+          <div className="login-fiber-scene" aria-hidden="true">
+            <div className="login-fiber-orb">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <i key={i} style={{ rotate: `${i * 28 - 70}deg` }} />
+              ))}
+              <span className="login-orb-core">
+                <Fingerprint size={66} strokeWidth={1} />
               </span>
-              <span>NETTPLUS</span>
             </div>
-            <div className="illustration-bars">
-              {[42, 67, 55, 82, 69, 93, 76, 87, 64, 95, 83, 100].map(
-                (height, i) => (
-                  <i key={i} style={{ height: `${height}%` }} />
-                ),
-              )}
-            </div>
-            <div className="illustration-check">
-              <span>
-                <Check size={16} />
+            <div className="login-float login-float-team">
+              <span className="login-float-icon">
+                <UsersRound size={20} />
               </span>
               <div>
-                <strong>Información lista para revisar</strong>
-                <small>Importa. Valida. Consulta.</small>
+                <strong>Tu gente, conectada</strong>
+                <small>Una visión compartida</small>
               </div>
-              <ShieldCheck size={22} />
+              <span className="login-float-check">
+                <Check size={13} />
+              </span>
             </div>
+            <div className="login-float login-float-data">
+              <span className="login-float-icon">
+                <FileSpreadsheet size={19} />
+              </span>
+              <div>
+                <strong>De los datos a la claridad</strong>
+                <small>Importa · Revisa · Consulta</small>
+              </div>
+            </div>
+            <span className="login-scene-caption">THE POWER OF FIBER</span>
           </div>
-          <div className="login-features">
-            <span>
-              <FileSpreadsheet size={15} />
-              Importación inteligente
-            </span>
-            <span>
-              <UsersRound size={15} />
-              Tu equipo, en contexto
-            </span>
+          <div className="login-story-note">
+            <span className="login-note-line" /> Menos archivos dispersos. Más
+            tiempo para tu equipo.
           </div>
-        </div>
-        <footer>
-          THE POWER OF FIBER<span>Asistencia que conecta.</span>
-        </footer>
-        <div className="brand-orbit orbit-one" />
-        <div className="brand-orbit orbit-two" />
-      </section>
-      <section className="login-panel">
-        <div className="login-form-wrap">
-          <span className={`connection-pill ${available ? "connected" : ""}`}>
-            <Signal size={13} />
-            {available
-              ? "Servidor local disponible"
-              : "Demostración en navegador"}
-          </span>
-          <div className="login-title">
+        </section>
+
+        <section className="login-panel" aria-labelledby="login-title">
+          <div className="login-card-top">
             <span className="login-lock">
-              <LockKeyhole size={23} />
+              <LockKeyhole size={23} strokeWidth={1.7} />
             </span>
-            <h2>Bienvenido a Nettplus</h2>
-            <p>Tu espacio para gestionar la asistencia.</p>
+            <span className="login-card-label">TU ESPACIO NETTPLUS</span>
           </div>
+          <h2 id="login-title">Qué bueno tenerte aquí.</h2>
+          <p className="login-intro">Ingresa con tu cuenta para continuar.</p>
+          <div
+            className={`login-connection ${available ? "is-connected" : "is-offline"}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="login-status-dot" />
+            {available ? "Conexión disponible" : "Servicio no disponible"}
+            <ShieldCheck size={14} aria-hidden="true" />
+          </div>
+          {!available && (
+            <p className="login-offline-note" id="login-offline">
+              No podemos conectar en este momento. Comprueba la conexión para
+              volver a intentar.
+            </p>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              void run(() => onLogin(email, password));
+              if (available)
+                void run("login", () => onLogin(email.trim(), password));
             }}
+            aria-busy={busy === "login"}
           >
-            <label>
-              Correo electrónico
+            <label htmlFor="login-email">Correo electrónico</label>
+            <div className="login-input-wrap">
+              <Mail size={18} aria-hidden="true" />
               <input
+                id="login-email"
+                name="email"
                 autoComplete="username"
                 type="email"
+                inputMode="email"
+                autoCapitalize="none"
+                spellCheck={false}
                 required
                 maxLength={120}
-                placeholder="tu.correo@nettplus.local"
+                placeholder="nombre@nettplus.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={busy || !available}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError("");
+                }}
+                disabled={Boolean(busy)}
+                aria-describedby={error ? "login-error" : undefined}
               />
-            </label>
-            <label>
-              Contraseña
-              <div className="password-field">
-                <input
-                  autoComplete="current-password"
-                  type={show ? "text" : "password"}
-                  required
-                  maxLength={128}
-                  placeholder="Ingresa tu contraseña"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={busy || !available}
-                />
-                <button
-                  type="button"
-                  aria-label={
-                    show ? "Ocultar contraseña" : "Mostrar contraseña"
-                  }
-                  onClick={() => setShow((s) => !s)}
-                >
-                  {show ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </label>
+            </div>
+            <label htmlFor="login-password">Contraseña</label>
+            <div className="login-input-wrap">
+              <LockKeyhole size={18} aria-hidden="true" />
+              <input
+                id="login-password"
+                name="password"
+                autoComplete="current-password"
+                type={show ? "text" : "password"}
+                required
+                maxLength={128}
+                placeholder="Tu contraseña"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError("");
+                }}
+                onKeyUp={(e) => setCapsLock(e.getModifierState("CapsLock"))}
+                onKeyDown={(e) => setCapsLock(e.getModifierState("CapsLock"))}
+                onBlur={() => setCapsLock(false)}
+                disabled={Boolean(busy)}
+                aria-describedby={
+                  [capsLock && "login-caps", error && "login-error"]
+                    .filter(Boolean)
+                    .join(" ") || undefined
+                }
+              />
+              <button
+                className="login-password-toggle"
+                type="button"
+                aria-label={show ? "Ocultar contraseña" : "Mostrar contraseña"}
+                aria-pressed={show}
+                onClick={() => setShow((s) => !s)}
+                disabled={Boolean(busy)}
+              >
+                {show ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+            {capsLock && (
+              <p className="login-caps" id="login-caps" role="status">
+                Bloq Mayús está activado.
+              </p>
+            )}
             {error && (
-              <p className="login-error" role="alert">
+              <p className="login-error" id="login-error" role="alert">
                 {error}
               </p>
             )}
             <button
-              className="btn primary login-submit"
-              disabled={busy || !available}
+              className="login-submit"
+              type="submit"
+              disabled={Boolean(busy) || !available}
+              aria-describedby={!available ? "login-offline" : undefined}
             >
-              {busy ? (
-                <span className="spinner" />
+              {busy === "login" ? (
+                <>
+                  <span className="spinner" /> Validando acceso…
+                </>
               ) : (
                 <>
-                  Iniciar sesión
-                  <ArrowRight size={17} />
+                  Iniciar sesión <ArrowRight size={18} />
                 </>
               )}
             </button>
           </form>
-          {available ? (
-            <details className="trial-credentials">
-              <summary>Accesos iniciales de prueba</summary>
-              <p>Para probar el servidor local con su base inicial:</p>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setEmail("admin@nettplus.local");
-                  setPassword("NettplusDemo2026!");
-                }}
-              >
-                Usar administrador <ArrowRight size={13} />
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setEmail("viewer@nettplus.local");
-                  setPassword("ConsultaDemo2026!");
-                }}
-              >
-                Usar consulta <ArrowRight size={13} />
-              </button>
-              <small>
-                Si el administrador cambió estas cuentas, utiliza tus
-                credenciales asignadas.
-              </small>
-            </details>
-          ) : (
-            <div className="offline-note">
-              <p>
-                Explora la demostración o conecta el servidor local para acceder
-                con una cuenta.
-              </p>
-              <button
-                className="text-link"
-                disabled={busy}
-                onClick={() => run(onCheck)}
-              >
-                Comprobar conexión
-              </button>
-            </div>
-          )}
-          <div className="login-divider">
-            <span>¿Quieres explorar primero?</span>
+          <div className="login-help">
+            <span>¿Necesitas acceso?</span>
+            <p>
+              Solicita tu cuenta o ayuda con tu contraseña al administrador de
+              Nettplus.
+            </p>
           </div>
-          <div className="demo-entry">
-            <button disabled={busy} onClick={() => run(() => onDemo("admin"))}>
-              <ShieldCheck size={18} />
-              <span>
-                <strong>Demo administrador</strong>
-                <small>Importa y configura</small>
-              </span>
-              <ArrowRight size={15} />
-            </button>
-            <button disabled={busy} onClick={() => run(() => onDemo("viewer"))}>
-              <UsersRound size={18} />
-              <span>
-                <strong>Demo consulta</strong>
-                <small>Explora y descarga</small>
-              </span>
-              <ArrowRight size={15} />
+          <div className="login-card-bottom">
+            <span>
+              <ShieldCheck size={14} /> Acceso con cuenta autorizada
+            </span>
+            <button
+              type="button"
+              className="login-retry"
+              disabled={Boolean(busy)}
+              onClick={() => void run("connection", onCheck)}
+              aria-label="Comprobar conexión con el servidor"
+            >
+              <RefreshCw
+                size={13}
+                className={busy === "connection" ? "is-checking" : ""}
+              />
+              {busy === "connection" ? "Comprobando…" : "Comprobar conexión"}
             </button>
           </div>
-          <p className="login-footnote">
-            <LockKeyhole size={12} />
-            La demo se guarda solo en este navegador.
-            <br />
-            El acceso local utiliza tu sesión del servidor.
-          </p>
-        </div>
-        <footer>
-          Nettplus · Control de asistencia
-          <span>Información que acompaña a tu equipo.</span>
-        </footer>
-      </section>
+        </section>
+      </main>
+      <footer className="login-footer">
+        <span>
+          Nettplus <ChevronRight size={12} /> Gestión de asistencia
+        </span>
+        <span>Información que acompaña a tu equipo.</span>
+      </footer>
     </div>
   );
 }

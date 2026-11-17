@@ -127,7 +127,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(in.Email))
-	if len(email) > 120 || len(in.Password) > 128 {
+	if !reEmail.MatchString(email) || len(email) > 120 || in.Password == "" || len(in.Password) > 128 {
 		writeError(w, http.StatusBadRequest, "Revisa el correo y la contraseña.")
 		return
 	}

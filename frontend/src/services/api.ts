@@ -17,9 +17,18 @@ export async function api<T>(
 ): Promise<T> {
   const response = await fetch(`/api${path}`, {
     method,
+    signal:
+      path.startsWith("/auth/") || path === "/session"
+        ? AbortSignal.timeout(15000)
+        : undefined,
     credentials: "same-origin",
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
+  }).catch(() => {
+    throw new ApiError(
+      503,
+      "No se pudo conectar con el servidor. Comprueba la conexión y vuelve a intentar.",
+    );
   });
   if (!response.headers.get("content-type")?.includes("application/json"))
     throw new ApiError(503, "El servidor local no está disponible.");
@@ -36,10 +45,15 @@ export async function serverAvailable() {
     const response = await fetch("/api/health", {
       signal: AbortSignal.timeout(3500),
     });
+    const result = response.headers
+      .get("content-type")
+      ?.includes("application/json")
+      ? await response.json()
+      : null;
     return Boolean(
       response.ok &&
-      response.headers.get("content-type")?.includes("application/json") &&
-      (await response.json()).service === "nettplus-api",
+      result?.service === "nettplus-api" &&
+      result?.database === "ok",
     );
   } catch {
     return false;

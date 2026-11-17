@@ -384,3 +384,28 @@ func TestAPI(t *testing.T) {
 		}
 	})
 }
+
+// La entrada inválida debe rechazarse antes de consultar cuentas o crear sesiones.
+func TestLoginInvalidInput(t *testing.T) {
+	for _, in := range []struct{ name, email, password string }{
+		{"sin correo", "", "UnaClaveValida2026!"},
+		{"correo inválido", "administrador", "UnaClaveValida2026!"},
+		{"correo demasiado largo", strings.Repeat("x", 121) + "@ejemplo.com", "UnaClaveValida2026!"},
+		{"sin contraseña", "persona@ejemplo.com", ""},
+		{"contraseña demasiado larga", "persona@ejemplo.com", strings.Repeat("x", 129)},
+	} {
+		t.Run(in.name, func(t *testing.T) {
+			payload, _ := json.Marshal(map[string]string{"email": in.email, "password": in.password})
+			r := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(payload))
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			api.New(nil, api.Config{}).Handler().ServeHTTP(w, r)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("esperaba 400, recibió %d", w.Code)
+			}
+			if len(w.Result().Cookies()) != 0 {
+				t.Fatal("una solicitud inválida no debe generar una cookie de sesión")
+			}
+		})
+	}
+}
