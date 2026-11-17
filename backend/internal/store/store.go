@@ -250,6 +250,14 @@ func AddAudit(ctx context.Context, tx pgx.Tx, user, action, detail string) error
 	return err
 }
 
+// AddAuditDirect registra una acción en la auditoría sin incrementar la revisión global.
+// Usa una transacción independiente para operaciones que no modifican datos de negocio.
+func (s *Store) AddAuditDirect(ctx context.Context, user, action, detail string) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		return AddAudit(ctx, tx, user, action, detail)
+	})
+}
+
 func deref(s *string) string {
 	if s == nil {
 		return ""

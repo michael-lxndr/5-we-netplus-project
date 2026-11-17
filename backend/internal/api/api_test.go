@@ -383,6 +383,78 @@ func TestAPI(t *testing.T) {
 			t.Errorf("esperaba 429, hubo %d", last)
 		}
 	})
+
+	t.Run("los intentos fallidos se registran en auditoría sin cambiar la revisión", func(t *testing.T) {
+		// Obtener revisión inicial
+		initialData := e.data(admin)
+		initialRevision := revision(initialData)
+
+		// Hacer un intento fallido con una contraseña única que no aparezca en "Credenciales incorrectas"
+		uniquePassword := "ClaveSecreta12345!"
+		e.call("POST", "/auth/login", map[string]string{"email": "inexistente@nettplus.local", "password": uniquePassword}, "")
+
+		// Verificar que la revisión no cambió
+		dataAfterFail := e.data(admin)
+		if revision(dataAfterFail) != initialRevision {
+			t.Errorf("la revisión no debe cambiar tras un intento fallido: antes %.0f, después %.0f", initialRevision, revision(dataAfterFail))
+		}
+
+		// Verificar que el intento fallido se registró en auditoría
+		audits := list(dataAfterFail, "audits")
+		found := false
+		for _, a := range audits {
+			audit := a.(map[string]any)
+			if audit["action"].(string) == "Intento fallido de inicio de sesión" {
+				found = true
+				// Verificar que la contraseña única no aparece en ningún lugar
+				detail := audit["detail"].(string)
+				user := audit["user"].(string)
+				if strings.Contains(detail, uniquePassword) || strings.Contains(user, uniquePassword) {
+					t.Errorf("la contraseña no debe aparecer en el evento de auditoría: %s", uniquePassword)
+				}
+				// Verificar que el usuario se identifica correctamente
+				if !strings.Contains(user, "inexistente@nettplus.local") {
+					t.Errorf("el usuario debe identificar el correo intentado: %s", user)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Error("el intento fallido debe registrarse en auditoría")
+		}
+	})
+
+	t.Run("el bloqueo se registra una sola vez, no por cada solicitud bloqueada", func(t *testing.T) {
+		// Usar un correo diferente para esta prueba
+		testEmail := "bloqueo@nettplus.local"
+
+		// Hacer 5 intentos fallidos (el límite es 5)
+		for i := 0; i < 5; i++ {
+			e.call("POST", "/auth/login", map[string]string{"email": testEmail, "password": "incorrecta"}, "")
+		}
+
+		// Hacer 2 intentos más (ya están bloqueados)
+		e.call("POST", "/auth/login", map[string]string{"email": testEmail, "password": "incorrecta"}, "")
+		e.call("POST", "/auth/login", map[string]string{"email": testEmail, "password": "incorrecta"}, "")
+
+		// Verificar que solo hay un evento de bloqueo asociado a este correo
+		data := e.data(admin)
+		audits := list(data, "audits")
+		blockCount := 0
+		for _, a := range audits {
+			audit := a.(map[string]any)
+			if audit["action"].(string) == "Bloqueo por intentos fallidos" {
+				user := audit["user"].(string)
+				// Contar solo eventos asociados al correo de esta prueba
+				if strings.Contains(user, testEmail) {
+					blockCount++
+				}
+			}
+		}
+		if blockCount != 1 {
+			t.Errorf("debe haber exactamente un evento de bloqueo para %s, hubo %d", testEmail, blockCount)
+		}
+	})
 }
 
 // La entrada inválida debe rechazarse antes de consultar cuentas o crear sesiones.
