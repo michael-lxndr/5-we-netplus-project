@@ -7,11 +7,13 @@ import {
   RotateCcw,
   Save,
   Settings2,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { assertAdmin, timestampLabel } from "../domain/attendance";
 import { createDemo, emptyData } from "../domain/demo";
 import { withAudit } from "../services/storage";
+import { tableExport, downloadBytes } from "../services/reports";
 import type { DemoUser, Role, Rules } from "../domain/types";
 import {
   Badge,
@@ -565,27 +567,92 @@ export function Users() {
   );
 }
 
+// Función auxiliar para convertir timestamp a AAAA-MM-DD en zona Ecuador
+// Construye el formato manualmente con partes para asegurar consistencia
+export function toEcuadorDate(timestamp: string): string {
+  const date = new Date(timestamp);
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Guayaquil",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((p) => p.type === "year")?.value ?? "";
+  const month = parts.find((p) => p.type === "month")?.value ?? "";
+  const day = parts.find((p) => p.type === "day")?.value ?? "";
+  return `${year}-${month}-${day}`;
+}
+
 export function Audit() {
-  const { data, mode } = useApp();
+  const { data, mode, notify } = useApp();
   const [search, setSearch] = useState("");
   const [action, setAction] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [exporting, setExporting] = useState("");
   const actions = [...new Set(data.audits.map((a) => a.action))];
+
   const rows = useMemo(
     () =>
-      data.audits.filter(
-        (a) =>
-          (!action || a.action === action) &&
-          `${a.user} ${a.action} ${a.detail}`
+      data.audits.filter((a) => {
+        if (action && a.action !== action) return false;
+        if (
+          search &&
+          !`${a.user} ${a.action} ${a.detail}`
             .toLocaleLowerCase("es")
-            .includes(search.toLocaleLowerCase("es")),
-      ),
-    [data, search, action],
+            .includes(search.toLocaleLowerCase("es"))
+        )
+          return false;
+
+        const eventDate = toEcuadorDate(a.at);
+        if (dateFrom && eventDate < dateFrom) return false;
+        if (dateTo && eventDate > dateTo) return false;
+        return true;
+      }),
+    [data, search, action, dateFrom, dateTo],
   );
   const { visible, page, setPage, size } = usePagination(
     rows,
-    search + action,
+    search + action + dateFrom + dateTo,
     10,
   );
+
+  async function exportAudit() {
+    setExporting("excel");
+    try {
+      const headers = ["Fecha", "Usuario", "Operación", "Resultado"];
+      const tableRows = rows.map((a) => [
+        timestampLabel(a.at),
+        a.user,
+        a.action,
+        a.detail,
+      ]);
+      const criteria = [
+        `Búsqueda: ${search || "Todas"}`,
+        `Tipo: ${action || "Todas"}`,
+        `Desde: ${dateFrom || "Todas"}`,
+        `Hasta: ${dateTo || "Todas"}`,
+      ].join(" · ");
+      const bytes = await tableExport(
+        "xlsx",
+        headers,
+        tableRows,
+        "Auditoría de seguridad",
+        criteria,
+      );
+      downloadBytes(
+        bytes,
+        `Nettplus_Auditoria_${dateFrom || "inicio"}_${dateTo || "fin"}.xlsx`,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      notify("Auditoría exportada a Excel con los filtros seleccionados.");
+    } catch (e) {
+      notify(`No se pudo exportar: ${String(e)}`, true);
+    } finally {
+      setExporting("");
+    }
+  }
   return (
     <>
       <PageHeading
@@ -595,7 +662,16 @@ export function Audit() {
             ? "Sesiones, importaciones y cambios registrados por el servidor local."
             : "Trazabilidad de las operaciones realizadas en este navegador."
         }
-      />
+      >
+        <button
+          className="btn primary"
+          disabled={!!exporting || !rows.length}
+          onClick={() => exportAudit()}
+        >
+          <FileSpreadsheet size={16} />
+          {exporting === "excel" ? "Exportando…" : "Exportar Excel"}
+        </button>
+      </PageHeading>
       <div className="filters card">
         <label className="search-field">
           Buscar operación
@@ -616,6 +692,22 @@ export function Audit() {
               <option key={a}>{a}</option>
             ))}
           </select>
+        </label>
+        <label>
+          Desde
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+        </label>
+        <label>
+          Hasta
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
         </label>
       </div>
       <Card

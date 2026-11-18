@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -152,7 +153,28 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	valid, _ := auth.Verify(in.Password, hash)
 	if account == nil || !account.Active || !valid {
-		s.recordFailure(key)
+		isFirstBlock := s.recordFailure(key)
+
+		// Etiqueta consistente para el usuario
+		userLabel := email
+		if account != nil {
+			userLabel = account.Name
+		} else {
+			userLabel = "usuario desconocido: " + email
+		}
+
+		// Registrar intento fallido (sin contraseña)
+		if err := s.st.AddAuditDirect(r.Context(), userLabel, "Intento fallido de inicio de sesión", "Credenciales incorrectas"); err != nil {
+			log.Printf("error al registrar intento fallido en auditoría: %v", err)
+		}
+
+		// Registrar bloqueo solo si es el primer intento que alcanza el límite
+		if isFirstBlock {
+			if err := s.st.AddAuditDirect(r.Context(), userLabel, "Bloqueo por intentos fallidos", "Demasiados intentos en 15 minutos"); err != nil {
+				log.Printf("error al registrar bloqueo en auditoría: %v", err)
+			}
+		}
+
 		writeError(w, http.StatusUnauthorized, "El correo o la contraseña no son correctos.")
 		return
 	}
@@ -192,7 +214,7 @@ func (s *Server) blocked(key string) bool {
 	return ok && a.reset.After(time.Now()) && a.count >= s.cfg.LoginMaxFails
 }
 
-func (s *Server) recordFailure(key string) {
+func (s *Server) recordFailure(key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
@@ -210,12 +232,15 @@ func (s *Server) recordFailure(key string) {
 		}
 	}
 	a, ok := s.attempts[key]
+	wasBlocked := ok && a.reset.After(now) && a.count >= s.cfg.LoginMaxFails
 	if ok && a.reset.After(now) {
 		a.count++
 	} else {
 		a = attempt{count: 1, reset: now.Add(s.cfg.LoginFailWindow)}
 	}
 	s.attempts[key] = a
+	// Devolver true si este es el primer intento que alcanza el bloqueo
+	return !wasBlocked && a.count == s.cfg.LoginMaxFails
 }
 
 func (s *Server) clearFailures(key string) {

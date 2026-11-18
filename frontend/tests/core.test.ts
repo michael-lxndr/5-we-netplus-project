@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeAll } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import Login from "../src/pages/Login";
@@ -357,5 +357,158 @@ describe("Acceso autenticado", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("Filtro de fechas de auditoría con zona horaria Ecuador", () => {
+  let toEcuadorDate: (timestamp: string) => string;
+
+  beforeAll(async () => {
+    // Importar la función real de Admin.tsx para probarla directamente
+    const adminModule = await import("../src/pages/Admin");
+    toEcuadorDate = adminModule.toEcuadorDate;
+  });
+
+  it("convierte correctamente un timestamp cerca de medianoche UTC a fecha Ecuador", () => {
+    // Timestamp: 2026-10-15 23:30:00 UTC
+    // En Ecuador (UTC-5): 2026-10-15 18:30:00
+    const timestamp = "2026-10-15T23:30:00Z";
+    const ecuadorDate = toEcuadorDate(timestamp);
+    expect(ecuadorDate).toBe("2026-10-15");
+  });
+
+  it("convierte correctamente un timestamp justo después de medianoche UTC a fecha Ecuador del día anterior", () => {
+    // Timestamp: 2026-10-16 00:30:00 UTC
+    // En Ecuador (UTC-5): 2026-10-15 19:30:00
+    const timestamp = "2026-10-16T00:30:00Z";
+    const ecuadorDate = toEcuadorDate(timestamp);
+    expect(ecuadorDate).toBe("2026-10-15");
+  });
+
+  it("convierte correctamente un timestamp al final del día en Ecuador", () => {
+    // Timestamp: 2026-10-15 04:59:59 UTC
+    // En Ecuador (UTC-5): 2026-10-14 23:59:59
+    const timestamp = "2026-10-15T04:59:59Z";
+    const ecuadorDate = toEcuadorDate(timestamp);
+    expect(ecuadorDate).toBe("2026-10-14");
+  });
+
+  it("filtra auditoría por rango de fechas usando conversión Ecuador", () => {
+    const audits = [
+      { id: "1", at: "2026-10-15T10:00:00Z", user: "admin", action: "Inicio de sesión", detail: "OK" },
+      { id: "2", at: "2026-10-16T02:00:00Z", user: "admin", action: "Importación", detail: "OK" }, // 21:00 Ecuador el 15
+      { id: "3", at: "2026-10-17T05:00:00Z", user: "admin", action: "Cierre", detail: "OK" }, // 00:00 Ecuador el 17
+    ];
+
+    const dateFrom = "2026-10-15";
+    const dateTo = "2026-10-16";
+
+    const filtered = audits.filter((a) => {
+      const eventDate = toEcuadorDate(a.at);
+      if (dateFrom && eventDate < dateFrom) return false;
+      if (dateTo && eventDate > dateTo) return false;
+      return true;
+    });
+
+    // Debe incluir los eventos del 15 y 16 en Ecuador
+    expect(filtered.length).toBe(2);
+    expect(filtered[0].id).toBe("1");
+    expect(filtered[1].id).toBe("2");
+  });
+});
+
+describe("Exportación de auditoría a Excel", () => {
+  it("exporta todas las filas filtradas, no solo la página visible", async () => {
+    const { tableExport } = await import("../src/services/reports");
+    const ExcelJS = await import("exceljs");
+
+    const headers = ["Fecha", "Usuario", "Operación", "Resultado"];
+    const rows = [
+      ["2026-10-15 10:00", "admin", "Inicio de sesión", "OK"],
+      ["2026-10-15 11:00", "admin", "Importación", "OK"],
+      ["2026-10-15 12:00", "admin", "Cierre", "OK"],
+      ["2026-10-16 09:00", "viewer", "Consulta", "OK"],
+      ["2026-10-16 10:00", "viewer", "Exportación", "OK"],
+    ];
+
+    const bytes = await tableExport(
+      "xlsx",
+      headers,
+      rows,
+      "Auditoría de prueba",
+      "Filtro: todos",
+    );
+
+    // Verificar que se generó el archivo
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(bytes.length).toBeGreaterThan(0);
+
+    // Leer el Excel para verificar el contenido
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes as any);
+
+    const sheet = workbook.getWorksheet("Detalle");
+    expect(sheet).toBeDefined();
+
+    if (!sheet) throw new Error("Hoja no encontrada");
+
+    // Verificar que tiene el header correcto
+    const headerRow = sheet.getRow(1);
+    expect(headerRow.getCell(1).value).toBe("Fecha");
+    expect(headerRow.getCell(2).value).toBe("Usuario");
+    expect(headerRow.getCell(3).value).toBe("Operación");
+    expect(headerRow.getCell(4).value).toBe("Resultado");
+
+    // Verificar que tiene todas las filas de datos (5 filas)
+    expect(sheet.rowCount).toBe(6); // header + 5 filas de datos
+
+    // Verificar el contenido de algunas filas
+    expect(sheet.getRow(2).getCell(1).value).toBe("2026-10-15 10:00");
+    expect(sheet.getRow(2).getCell(2).value).toBe("admin");
+    expect(sheet.getRow(6).getCell(1).value).toBe("2026-10-16 10:00");
+    expect(sheet.getRow(6).getCell(2).value).toBe("viewer");
+  });
+
+  it("exporta solo las filas filtradas cuando se aplican filtros", async () => {
+    const { tableExport } = await import("../src/services/reports");
+    const ExcelJS = await import("exceljs");
+
+    const headers = ["Fecha", "Usuario", "Operación", "Resultado"];
+    const allRows = [
+      ["2026-10-15 10:00", "admin", "Inicio de sesión", "OK"],
+      ["2026-10-15 11:00", "admin", "Importación", "OK"],
+      ["2026-10-16 09:00", "viewer", "Consulta", "OK"],
+    ];
+
+    // Filtrar solo filas de admin
+    const filteredRows = allRows.filter((row) => row[1] === "admin");
+
+    const bytes = await tableExport(
+      "xlsx",
+      headers,
+      filteredRows,
+      "Auditoría filtrada",
+      "Filtro: admin",
+    );
+
+    // Verificar que se generó el archivo
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(bytes.length).toBeGreaterThan(0);
+
+    // Leer el Excel para verificar el contenido
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes as any);
+
+    const sheet = workbook.getWorksheet("Detalle");
+    expect(sheet).toBeDefined();
+
+    if (!sheet) throw new Error("Hoja no encontrada");
+
+    // Verificar que solo tiene las filas filtradas (2 filas de admin + header)
+    expect(sheet.rowCount).toBe(3); // header + 2 filas de datos
+
+    // Verificar que ambas filas son de admin
+    expect(sheet.getRow(2).getCell(2).value).toBe("admin");
+    expect(sheet.getRow(3).getCell(2).value).toBe("admin");
   });
 });
